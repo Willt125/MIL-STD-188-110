@@ -38,6 +38,9 @@ Both codes have d_free = 10, so loopback cannot tell them apart. Only interopera
 **Decision:** use the literal figure reading (133/171 octal, T1 output first). This matches the
 generator pair commonly quoted for this waveform, which still needs confirming against a
 recording.
+**Tests:** `fec.py` derives the taps with a delay formula. The oracle in
+`tests/oracle/conv_encoder.py` transcribes the figure's cells literally, so the two must agree.
+The mutation pass confirms that the alternative (time-reversed) reading fails the suite.
 
 ### INT-003: Data scrambler structure (Figure 6). *Interpretation, High*
 The text says only "12-bit shift register"; the structure is in Figure 6. Reading the figure:
@@ -163,6 +166,13 @@ the long column is "reserved") and the short-interleave probe pattern (§5.3.2.3
 It therefore behaves exactly like a zero-interleave mode. **Decision:** 4800 bps is represented
 internally as `interleave="zero"`, so it gets the 3-segment (0.6 s) preamble. Asking for 4800 bps
 with long interleave is an error.
+
+### INT-023: Encoder register at the start of a transmission. *Unspecified, High*
+The spec does not say what the convolutional encoder's shift register holds before the first
+data bit. **Decision:** it starts cleared (all zero), the conventional choice, and the same state
+the coder flush leaves behind. The RX Viterbi decoder therefore starts in state 0. It can also
+start with the state unknown (`start_state=None`), at the cost of a few unreliable leading bits
+(tested). If a real recording shows otherwise, only the starting state changes.
 
 ---
 

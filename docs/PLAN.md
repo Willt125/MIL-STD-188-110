@@ -162,8 +162,10 @@ production version must match it exactly over randomized inputs:
   permutation.
 - Data scrambler: the oracle is a bit-by-bit Galois register drawn from Figure 6. Production
   uses a precomputed 160-entry table.
-- Convolutional encoder: the oracle uses polynomial multiplication over GF(2). Production uses
-  a shift register.
+- Convolutional encoder: the oracle shifts bits through the seven named cells of Figure 4,
+  one bit at a time. Production convolves the input with tap vectors derived from the
+  polynomials. (This swaps the roles first proposed here: a literal figure transcription
+  makes the better oracle.)
 - Viterbi: the oracle is a brute-force maximum-likelihood search over all inputs for short
   blocks (up to about 14 bits). Production soft Viterbi must find the same codeword.
 
