@@ -79,8 +79,13 @@ note in §5.3.2.3.7.1.2.
 Table VI gives 20×36 (long) and 10×9 (short). Load: the row advances by 7 mod rows. Fetch: the
 column decrements by 7 (not 17) mod cols. The general fetch rule ("row reset to zero, column
 reset to one larger than when row was last zero") is otherwise unchanged.
+**Fetch wording:** "continue until the row number reaches the maximum value. At this point, the
+row number shall be reset to zero". We read this as: fetch the bit in the last row, *then*
+reset. The other reading (reset on reaching the last row, without fetching it) would never read
+the last row of the matrix, so it cannot be what was meant. This applies to all rates.
 **Tests:** permutation bijectivity for both sizes (gcd(7,20) = gcd(7,10) = 1 for load, and the
-fetch visits every cell); a literal oracle.
+fetch visits every cell); a literal oracle that asserts each cell is written once and read once.
+The spec's own example (row 1 col 559, row 2 col 542) is checked verbatim.
 
 ### INT-008: Repetition order at 150/300 bps. *Interpretation, High*
 "Repeated in pairs": output is T1 T2 T1 T2 … (2× or 4×), not T1 T1 … T2 T2. Repetition is
