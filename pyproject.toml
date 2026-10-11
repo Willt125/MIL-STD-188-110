@@ -21,6 +21,8 @@ packages = ["src/m110c"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+# Warnings are bugs here: a numpy overflow warning was the first sign of a sign-flip bug in M2.
+filterwarnings = ["error"]
 markers = [
     "slow: long-running performance/conformance tests (deselect with -m 'not slow')",
 ]
