@@ -50,8 +50,12 @@ x¹² + x⁶ + x⁴ + x + 1. The output tribit is (cell 2, cell 1, cell 0) = (MS
 The initial state is `1011 1010 1101` = 0xBAD, with cell 11 as the leftmost bit.
 **Decision:** as above. The register is advanced 8 times *before* the first output and 8 times
 between outputs. It is reloaded with 0xBAD every 160 symbols, before that symbol's 8 shifts.
-**Tests:** a bit-level oracle drawn from the figure; a period of exactly 160; the first several
-outputs checked by hand in the test file's docstring.
+**Tests:** a box-by-box oracle of the drawing (`tests/oracle/data_scrambler.py`); a period of
+exactly 160; the eight shifts before the first output traced in a test, with step 1 worked by
+hand. **Supporting evidence:** without the reset, the register has period 4095, so this
+polynomial is primitive (maximal-length), as a designer would choose. Most misreadings of the
+taps are not. The mirror-image reading is also primitive, though, so only a real recording can
+settle INT-003 completely.
 
 ### INT-004: Data scrambler alignment. *Interpretation, High*
 **Decision:** the 160-symbol period counts every transmitted data-phase symbol (unknown *and*
@@ -178,6 +182,14 @@ data bit. **Decision:** it starts cleared (all zero), the conventional choice, a
 the coder flush leaves behind. The RX Viterbi decoder therefore starts in state 0. It can also
 start with the state unknown (`start_state=None`), at the cost of a few unreliable leading bits
 (tested). If a real recording shows otherwise, only the starting state changes.
+
+### INT-024: The MGD applies before Table X at 75 bps. *Interpretation, High*
+§5.3.2.3.7.1.1 says each 75-bps "channel symbol" maps to 32 tribits via Table X, but does not
+say whether that channel symbol is the raw dibit or the MGD output. **Decision:** MGD first,
+then Table X. Figure 2 places the MGD before symbol formation at every rate, and Table IX is
+explicitly headed "75 bps (fixed frequency) and 1200 bps". The four Table X waveforms are
+orthogonal, so Gray coding buys nothing at 75 bps. It is applied only because the block
+diagram applies it everywhere. An RX that skipped it would swap the dibits 10 and 11.
 
 ---
 
