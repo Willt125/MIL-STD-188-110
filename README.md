@@ -16,7 +16,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M0 Scaffolding | done |
 | M1 Spec tables and derived mode parameters | done |
 | M2 FEC encoder and Viterbi decoder | done |
-| M3 Interleaver | next |
+| M3 Interleaver | done |
+| M4 MGD, scramblers, symbol formation | next |
 
 ## Development
 
