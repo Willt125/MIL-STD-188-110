@@ -1,7 +1,6 @@
 # Implementation Plan: MIL-STD-188-110C Serial-Tone Modem
 
-Status: **draft for review**. Decisions marked **[DECIDE]** need the maintainer's sign-off
-before the milestone that depends on them starts.
+Status: **accepted** (2026-10-11). Decisions recorded as **[DECIDED]**.
 
 ---
 
@@ -42,15 +41,14 @@ before the milestone that depends on them starts.
 - Real-time sound-card I/O. We read and write sample streams; the user can pipe to `aplay`,
   `sox`, GNU Radio, an SDR, and so on.
 - The optional appendices (B: 39-tone, C: 3200–9600 bps, D: wideband, F: multi-channel). They
-  are listed as stretch milestones in §6. **[DECIDE]** whether "all fixed-frequency data modes"
-  was meant to include Appendix C. That appendix reuses most of the receiver but adds QAM,
-  tail-biting codes and a different frame. My recommendation is to finish §5.3.2 first.
+  are listed as stretch milestones in §6. **[DECIDED]** v1.0 covers the §5.3.2 serial-tone
+  section only; Appendix C is a stretch goal.
 
 ---
 
 ## 2. Technology choices
 
-### 2.1 Language **[DECIDE]**
+### 2.1 Language **[DECIDED: Python 3.11+ / NumPy]**
 
 **Recommendation: Python 3.11+ with NumPy as the only runtime dependency.** pytest and
 hypothesis are used for tests; matplotlib is optional, for inspection notebooks only.
@@ -70,7 +68,7 @@ approachability. It roughly doubles the effort per milestone. A middle path is t
 Python reference first and port the frozen design to C as a stretch goal (§6), using the Python
 golden vectors as the C test oracle.
 
-### 2.2 Sample-stream format defaults **[DECIDE]**
+### 2.2 Sample-stream format defaults **[DECIDED: as proposed]**
 
 | Parameter    | Proposed default | Options |
 |--------------|------------------|---------|
@@ -206,6 +204,15 @@ The serial-tone waveform has not changed since 188-110A, so any real-world recor
 host such samples. Decoding one successfully, and getting a sensible D1/D2 and EOM, is the
 strongest available evidence that our interpretations are right. We use recordings only as
 test input, never as a source of code.
+
+### 4.7 Testing the tests
+A green suite proves nothing if the tests cannot fail. Each milestone ends with a manual
+mutation pass: plant plausible mistakes (typos, swapped rows/columns, off-by-one steps) in the
+new module, and confirm that a test fails for each one. In M1 this pass found four tables that
+nothing cross-checked: Table VI 75S rows/columns, the sync scrambler sequence, the EOM, and the
+LFSR taps. That led to the "double entry" tests and the separately-transcribed row moduli.
+Note: run mutants with `PYTHONDONTWRITEBYTECODE=1`. A same-size edit made within the same
+second can otherwise be masked by a stale `.pyc`.
 
 ---
 

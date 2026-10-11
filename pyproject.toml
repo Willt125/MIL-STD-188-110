@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "m110c"
+version = "0.0.1"
+description = "Readable, educational encoder/decoder for the MIL-STD-188-110C serial-tone HF modem"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "hypothesis>=6"]
+dev = ["pytest>=7", "hypothesis>=6", "ruff"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/m110c"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: long-running performance/conformance tests (deselect with -m 'not slow')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

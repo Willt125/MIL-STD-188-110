@@ -157,6 +157,13 @@ with I and Q swapped, mirrors the spectrum. The result looks like 8PSK with the 
 reversed, so k becomes −k mod 8. RX will offer `--invert-spectrum`. Acquisition could also try
 both senses, because the preamble correlation fails cleanly in the wrong one.
 
+### INT-022: How 4800 bps is labelled. *Unspecified, High*
+4800 bps has no interleaver (§5.3.2.3.4 note). It uses the short-interleave D1/D2 (Table XI;
+the long column is "reserved") and the short-interleave probe pattern (§5.3.2.3.7.1.2 note).
+It therefore behaves exactly like a zero-interleave mode. **Decision:** 4800 bps is represented
+internally as `interleave="zero"`, so it gets the 3-segment (0.6 s) preamble. Asking for 4800 bps
+with long interleave is an error.
+
 ---
 
 ## Candidate errata to report upstream
