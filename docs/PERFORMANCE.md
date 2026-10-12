@@ -185,3 +185,108 @@ Things found on the way, each now covered by a test:
 On the real recordings (one core, 9600 S/s): 0.1–0.4 s of computing per second of signal,
 against 0.05–0.15 for the M8 receiver. Pipe-able in real time.
 
+## M11: acquisition and tracking in fast fading (2026-10-12)
+
+M10 met Table XVI with long preambles. M11 measured the next weak points: short preambles on
+fading channels, and 75 bps at and below its Table XVI SNR. Both turned out to be
+acquisition problems; M11 changes only the acquisition.
+
+### Short-preamble acquisition
+
+Short interleave (0.6-s preamble), each Table XVI fading channel at its specified SNR, 20
+transmissions per row:
+
+| Rate | Channel | SNR | Acquired, M10 | Acquired, M11 | On the first segment, M10 → M11 |
+|------|---------|-----|---------------|---------------|-------------------------------|
+| 2400 | 2 ms, 5 Hz | 30 dB | 18/20 | 20/20 | 10 → 15 |
+| 300 | 5 ms, 5 Hz | 7 dB | 18/20 | 20/20 | 8 → 15 |
+| 150 | 5 ms, 5 Hz | 5 dB | 18/20 | 20/20 | 8 → 15 |
+| 75 | 5 ms, 5 Hz | 2 dB | 16/20 | 19/20 | 3 → 11 |
+| other fading rows | | | 20/20 | 20/20 | 20 → 20 |
+
+The cause was in reading a detected segment, not in detecting it: true segments were found
+with a healthy metric and a correct prefix, then rejected because the count slots were
+misread. Slots were decided coherently against a phase ramp fitted to the prefix and
+extrapolated up to 190 ms; on a 5-Hz channel the phase does not follow a ramp that long.
+Each slot after the prefix is now judged against the phase of the slot before it. Two other
+fixes were tried and rejected: non-coherent slot decisions (28/30 instead of 25/30 at 75 bps,
+but fewer detections at −9 dB on AWGN) and choosing the most likely *valid* segment ending
+(worse: without the validity check as a filter, misaligned candidates were accepted, and
+the demodulator spent its loss window on them while the real preamble went by). On AWGN near
+the detection limit the phase-tracked reading detects as often as before (of 60
+transmissions, before and after: 2400 bps at −8 dB 42 and 42, at −7 dB 58 and 59; 600 bps
+at −8 dB 41 and 43; 75 bps at −8 dB 45 and 45).
+
+### Counts misread in a fade
+
+The rest of the 75-bps losses at the Table XVI point were acquisition too. 75L on 2 paths,
+5 ms, 5 Hz, at 2 dB: three of 16 channels lost their message, each the same way. The first
+segment was detected at the right place with a correct prefix, but a fade turned its count
+slots into another *valid* count (8 instead of 23, say). The data phase was then expected
+in the middle of the preamble, the demodulator produced a second of garbage until it
+declared the signal lost, and the search found the preamble again further on and decoded
+the real message after the garbage. The old reading did the same on these channels;
+phase-tracked reading does not cause it, and no slot reading can avoid it in a deep fade.
+
+A count is now checked against the next segments, which must count down from it: the first
+of the next two that reads validly decides, and a contradicted count is rejected (the
+search goes on and finds a later segment). A segment that only confirms may have three
+prefix slots wrong rather than one, since its position is already known. The search waits
+0.4 s longer before it reports a detection; the receiver replays the buffered samples, so
+nothing is lost.
+
+75L messages decoded with no errors, of 16, on that channel:
+
+| SNR | M10 | M11 |
+|-----|-----|-----|
+| 2 dB (Table XVI) | 13 | 16 |
+| 0 dB | 15 | 15 |
+| −1 dB | 7 | 8 |
+
+Below 0 dB the failures are partial (a few hundred bit errors in a decoded message): the
+75-bps demodulator, not acquisition, is the limit there. The short-preamble table above is
+unchanged with the check, and on AWGN near the detection limit it detects exactly as often
+(60 transmissions each: 2400 bps at −8 and −7 dB, 600 and 75 bps at −8 dB).
+
+### Tracking at 75 bps: investigated, nothing kept
+
+M11 also tried to move the 75-bps limit by changing the equaliser's tracking. Nothing
+survived measurement against M10 (16 channels per point, so differences of two or three
+are noise), and the equaliser is unchanged. Recorded because each looked convincing:
+
+- *An ambiguity check.* The end of a long preamble repeats every 32 symbols, so in the wide
+  estimate (taps −20…20) a path at +12 cannot be told from one at −20; such windows were
+  detected (smallest eigenvalue of SᴴS) and kept out of the delay profile, timing and
+  alignment. 26 of 48 decoded at 0, −1 and −2 dB, against M10's 23: not significant. A path
+  12 symbols late, which is what the ambiguity could confuse, is tracked correctly by M10
+  already (a test now guards it).
+- *Shortening the wide span below 32 taps,* to make the ambiguity impossible: it can no
+  longer see a path 12 symbols early, which is the 5-ms channel when acquisition locks onto
+  the later path.
+- *Coasting through fades* (loops and realignment learning only from units with at least
+  a tenth of the power as signal): 10 or 11 of 16 at −1 dB either way (with the ambiguity
+  check in place). With a dead gap in a
+  75-bps message (0.3 to 0.6 s, clock offsets up to ±600 ppm, 20 cases) M10 decoded 19
+  and the gated loops 20, also not enough to keep it. Gaps of 0.8 s, most of the 1-s loss
+  window, end the message with either.
+- *Weighting each loop correction by its estimated reliability:* no gain at 75 bps, and the
+  2400-bps, 2-ms, 5-Hz row fell to BER 2e-2. At 5-Hz fading the channel changes within the
+  estimation window, the residual looks like noise even at 30 dB, and the weights throttled
+  the carrier loop while the acquired carrier was still several hertz off.
+- *A new timing detector* (the strongest path's offset unwrapped, or a power-weighted
+  average over all paths): short-interleave 2400 bps on the 2-ms, 5-Hz channel decoded 12
+  of 20 messages instead of 17.
+
+Remaining limit at 75 bps: at 5-Hz Doppler the channel is not constant over the estimation
+windows (40–68 ms), so even without noise the fit is imperfect in places. Shorter windows
+would trade that for more noise. Not pursued: the Table XVI point now decodes every channel
+measured.
+
+### Table XVI after M11
+
+Four channels per row, as in the M10 regression run: every row still meets its requirement
+(the only bit errors: 4800 bps on 2 ms, 0.5 Hz, BER 2e-5, and 2400 bps on 2 ms, 5 Hz,
+BER 3e-5, each from one channel, against 1e-3). Clock offsets of ±900 and ±2000 ppm are
+still reported within 20 ppm, and short-interleave 2400 bps on the 2-ms, 5-Hz channel
+decodes 17 of 20 messages, as in M10.
+

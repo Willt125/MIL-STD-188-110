@@ -417,3 +417,33 @@ def test_back_to_back_short_preambles_in_small_chunks(chunk):
     x = np.concatenate([np.zeros(3000, complex), a, b, np.zeros(9600, complex)])
     out, rx = receive(x, [chunk])
     assert out == b"first messagesecond" and len(rx.messages) == 2
+
+
+# --- Tracking through fades (M11) --------------------------------------------------------
+
+
+def test_a_late_acquired_path_12_symbols_after_the_first():
+    """5 ms is exactly 12 symbols, and the later path is the stronger, so the acquisition
+    locks to it and the first path sits 12 symbols early. Through a long preamble, whose end
+    repeats every 32 symbols (so that taps 32 apart cannot be told apart there), the
+    receiver must move tap 0 to the first path and keep it there."""
+    m = mode(1200, "long")
+    msg = message(200)
+    x = two_paths(signal(m, msg), 5.0, gains=(0.5, 1.0j), fractional=False)
+    out, rx = receive(x)
+    assert out == msg and len(rx.messages) == 1
+
+
+@pytest.mark.slow
+def test_75bps_on_the_table_xvi_channel_at_its_snr():
+    """75L on 2 paths, 5 ms, 5 Hz at 2 dB, the Table XVI point: all 16 channels decode
+    without error. Before M11 checked counts against the next segments, 3 were lost to a
+    count misread in a fade (docs/PERFORMANCE.md, M11)."""
+    m = mode(75, "long")
+    for seed in range(16):
+        msg = message(60, seed)
+        y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 2.0), seed=3000 + seed).process(
+            signal(m, msg, tail=9600)
+        )
+        out, _ = receive(y)
+        assert bit_errors(out, msg) == 0, seed

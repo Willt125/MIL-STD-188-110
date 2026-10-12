@@ -25,12 +25,19 @@ Refinement and reading (:func:`read_segment`)
     The residual frequency comes from the phase progression of the nine prefix correlations,
     which are 13.3 ms apart, so offsets up to +/-37.5 Hz are unambiguous. Then all fifteen
     slots are classified coherently against the eight waveforms: the prefix (as a check), D1,
-    D2, the three count symbols and the final 0. The count says how many segments remain,
-    and so where the data phase starts.
+    D2, the three count symbols and the final 0. After the prefix, each slot's phase
+    reference is the slot before it, so the reading follows a fading channel's phase. The
+    count says how many segments remain, and so where the data phase starts.
 
 A detection is accepted only if the prefix reads back correctly (at most one slot wrong),
 D1/D2 name a mode we implement (INT-019) and the count symbols are valid (INT-001).
 Anything else is treated as a false alarm and the search continues.
+
+A fade can also turn the count slots into another *valid* count, and a wrong count puts the
+data phase in the wrong place: the message is lost. So the count is checked against the
+next segments, which must count down from it. The first of the next two that reads validly
+decides; if neither does, the count stands (the last segment, count 0, has nothing after it
+to check against).
 """
 
 from dataclasses import dataclass
@@ -51,6 +58,12 @@ PREFIX_VALUES = sorted(set(PREFIX.tolist()))  # the waveforms the search needs: 
 #: (10 s, all positions and bins, at 9600 and 48000 S/s); a preamble gives about 0.6 at
 #: +10 dB, 0.3 at 0 dB, 0.12 at -6 dB and 0.06 at -9 dB SNR (3 kHz).
 DETECTION_THRESHOLD = 0.08
+
+#: How many following segments may confirm or contradict a count, and how many prefix
+#: slots such a segment may have wrong: its position is known, so the prefix serves less as
+#: a false-alarm check there (docs/PERFORMANCE.md, M11).
+CONFIRM_SEGMENTS = 2
+CONFIRM_PREFIX_ERRORS = 3
 
 
 @dataclass
@@ -128,8 +141,11 @@ class PreambleSearch:
         self.prefilter = lowpass_taps(sample_rate, 1500 + max_offset_hz + 200, transition_hz=400)
         self.prefilter_delay = (self.prefilter.size - 1) // 2
         self._history = np.zeros(self.prefilter.size - 1, dtype=complex)
-        # Samples needed beyond a position n to judge it AND read its whole segment.
-        self.lookahead = (SLOTS_PER_SEGMENT - 1) * self.slot + self.ref_len + 2
+        # Samples needed beyond a position n to judge it AND read its whole segment, and
+        # the segments that confirm its count.
+        self.lookahead = (
+            ((CONFIRM_SEGMENTS + 1) * SLOTS_PER_SEGMENT - 1) * self.slot + self.ref_len + 2
+        )
         self._z = np.zeros(0, dtype=complex)  # mixed-down signal
         self._z_start = 0  # global index of _z[0]
         self._samples_in = 0
@@ -259,19 +275,26 @@ class PreambleSearch:
         reading = read_segment(
             self._z, peak - self._z_start, coarse_f, self.waveforms, self.slot, self.sample_rate
         )
-        if reading is None:
+        fields = segment_fields(reading)
+        if fields is None:
             return None
-        symbols, residual_hz, prefix_errors = reading
-        if prefix_errors > 1:
-            return None
-        d1, d2 = symbols[9], symbols[10]
-        found = mode_from_d1_d2(d1, d2)
-        counts = symbols[11:14]
-        if found is None or min(counts) < 4 or symbols[14] != 0:
-            return None
-        count = ((counts[0] - 4) << 4) | ((counts[1] - 4) << 2) | (counts[2] - 4)  # INT-001
-        if count >= found.preamble_segments:
-            return None
+        found, d1, d2, count = fields
+        _, residual_hz, prefix_errors = reading
+        for j in range(1, min(CONFIRM_SEGMENTS, count) + 1):
+            after = read_segment(
+                self._z,
+                peak - self._z_start + j * SLOTS_PER_SEGMENT * self.slot,
+                coarse_f,
+                self.waveforms,
+                self.slot,
+                self.sample_rate,
+            )
+            following = segment_fields(after, CONFIRM_PREFIX_ERRORS)
+            if following is None or following[1:3] != (d1, d2):
+                continue  # unreadable (or another mode's): look one segment further
+            if following[3] != count - j:
+                return None
+            break
         if self.zero_interleave and found.interleave == "short":
             found = mode(found.rate, "zero")  # INT-012: zero and short share D1/D2
         return Detection(
@@ -284,6 +307,25 @@ class PreambleSearch:
             count=count,
             prefix_errors=prefix_errors,
         )
+
+
+def segment_fields(reading, max_prefix_errors=1):
+    """(mode, D1, D2, count) from a :func:`read_segment` result, or None if it is not a
+    valid preamble segment."""
+    if reading is None:
+        return None
+    symbols, _, prefix_errors = reading
+    if prefix_errors > max_prefix_errors:
+        return None
+    d1, d2 = symbols[9], symbols[10]
+    found = mode_from_d1_d2(d1, d2)
+    counts = symbols[11:14]
+    if found is None or min(counts) < 4 or symbols[14] != 0:
+        return None
+    count = ((counts[0] - 4) << 4) | ((counts[1] - 4) << 2) | (counts[2] - 4)  # INT-001
+    if count >= found.preamble_segments:
+        return None
+    return found, d1, d2, count
 
 
 def read_segment(z, a, coarse_f, waveforms, slot, sample_rate):
@@ -311,8 +353,16 @@ def read_segment(z, a, coarse_f, waveforms, slot, sample_rate):
     phase = np.unwrap(np.angle(prefix_corr))
     slope, intercept = np.polyfit(np.arange(len(PREFIX)), phase, 1)  # radians per slot
     residual_hz = slope / (2 * np.pi * slot / sample_rate)
-    # Undo the residual phase ramp, then decide every slot coherently.
-    rotation = np.exp(-1j * (intercept + slope * np.arange(SLOTS_PER_SEGMENT)))
-    decided = np.argmax(np.real(corr * rotation[:, None]), axis=1)
+    # Decide the slots coherently. In the prefix the phase reference is the fitted ramp.
+    # After it, each slot is judged against the phase of the slot before it (as decided),
+    # advanced by the residual frequency: on a fading channel the phase wanders, and a
+    # ramp extrapolated from the prefix misread the count slots, up to 190 ms later, often
+    # enough to miss up to 1 in 6 short preambles at 5-Hz fading (docs/PERFORMANCE.md, M11).
+    rotation = np.exp(-1j * (intercept + slope * np.arange(len(PREFIX))))
+    decided = np.zeros(SLOTS_PER_SEGMENT, dtype=int)
+    decided[: len(PREFIX)] = np.argmax(np.real(corr[: len(PREFIX)] * rotation[:, None]), axis=1)
+    for j in range(len(PREFIX), SLOTS_PER_SEGMENT):
+        reference = corr[j - 1, decided[j - 1]] * np.exp(1j * slope)
+        decided[j] = int(np.argmax(np.real(corr[j] * np.conj(reference))))
     prefix_errors = int(np.count_nonzero(decided[: len(PREFIX)] != PREFIX))
     return [int(v) for v in decided], float(residual_hz), prefix_errors

@@ -29,7 +29,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M8 Acquisition, tracking and `m110c-rx` | done |
 | M9 Watterson HF channel simulator (`m110c-chan`) | done |
 | M10 Equalisation and fading-channel tracking | done |
-| M11 75-bps refinements, acquisition in fades | next |
+| M11 75-bps refinements, acquisition in fades | done |
+| M12 Hardening: streaming CLI, fuzzing, long streams | next |
 
 ## Transmitting
 
