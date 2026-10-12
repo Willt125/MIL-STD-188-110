@@ -18,14 +18,14 @@ All paragraph and table numbers refer to the main body (§5.3.2) unless noted ot
 
 ## Validation status (real recordings, 2026-10-12)
 
-Nineteen real-world 188-110A recordings were analysed against this register (method and per-file
+Twenty real-world 188-110A recordings, plus a decoder vendor's documentation, were analysed against this register (method and per-file
 results in [`VALIDATION.md`](VALIDATION.md)). In the table, **Confirmed** means the
 interpretation was observed in real transmissions, and the obvious alternative failed where it
 could be tested.
 
 | Entry | Status | Evidence |
 |-------|--------|----------|
-| INT-001 count encoding (text, not Table XII) | **Confirmed** | 2400L/75L preambles count 23…0 cleanly by the text rule; by Table XII they read 43, 41, 42… |
+| INT-001 count encoding (text, not Table XII) | **Confirmed** | 2400L/75L preambles count 23…0 cleanly by the text rule (by Table XII: 43, 41, 42…); again in an independent RadioScanner.ru recording |
 | INT-002 encoder register orientation | **Confirmed** | fox decodes; our TX matches the real modem; the time-reversed taps do not |
 | INT-003 data scrambler (Figure 6) | **Confirmed** | probes descramble to 0 (coherence 0.99 vs 0.32 control); the mirror-image taps do not match |
 | INT-004 scrambler continuous through probes | **Confirmed** | same evidence |
@@ -36,13 +36,14 @@ could be tested.
 | INT-009 first fetched bit = MSB | **Confirmed** | our TX matches; the LSB reading does not |
 | INT-010 75-bps exceptional sets | **Confirmed** | blind classification finds them at sets 44, 89, 134… (75S) and 359, 719 (75L) |
 | INT-011 EOM bit order | **Confirmed** | exact 32-bit EOM matches in 12 recordings |
-| INT-013 flush to end of block (interleaved) | **Confirmed** (2400S) | real signal ends after exactly the 150 frames our framer sends. Zero-interleave padding not observed |
-| INT-016 bit order | **Partly** | data bits are LSB-first, but real modems here carry **async 8N1 characters** (start/stop bits on air), see VALIDATION.md |
+| INT-013 flush to end of block (interleaved) | **Confirmed** (2400S) | real signal ends after exactly the 150 frames our framer sends. 7 more recordings end on whole blocks (supporting). Zero-interleave padding not observed |
+| INT-016 bit order | **Confirmed** (LSB-first) | the recordings carry async 8N1 characters, LSB first; Wavecom documents both ASCII SYNC (8 bits LSB first, our default) and ASCII ASYNC. Framing option pending |
+| INT-021 sideband inversion | Supported (documentation) | Wavecom's decoder has a USB/LSB polarity switch |
 | INT-019 unimplemented D1/D2 | Inconclusive | the digital-voice recording is too weak to read reliably |
 | INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
 | INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
 | Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
-| INT-012, 014, 015, 017, 018, 021, 022, 023 | n/a | implementer choices; recordings cannot confirm or refute them |
+| INT-012, 014, 015, 017, 018, 022, 023 | n/a | implementer choices; recordings cannot confirm or refute them |
 
 ---
 

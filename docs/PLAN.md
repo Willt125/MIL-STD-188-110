@@ -218,8 +218,13 @@ second can otherwise be masked by a stale `.pyc`.
 
 ### 4.8 Receiver design inputs from real recordings
 Measured in [`VALIDATION.md`](VALIDATION.md); M7–M12 must meet these, not only the spec's figures:
-- **Timing drift up to ±0.5%** (≈ +3500 ppm observed; the spec's ±10 ppm is a transmitter limit).
-- **Carrier offset** within ±20 Hz observed; keep the ±75 Hz acquisition target.
+- **Timing drift: track at least ±0.2%** (up to +940 ppm observed in one set of captures; the
+  spec's ±10 ppm is a transmitter limit).
+- **Carrier offset:** within ±20 Hz in these clips, but Wavecom's decoder allows ±400 Hz.
+  Proposed: widen the M8 acquisition target from ±75 Hz to ±400 Hz (decision pending).
+- **Sideband inversion** (USB/LSB) occurs in practice: provide `--invert-spectrum` (INT-021).
+- **Late entry** (sync on probes without a preamble) is offered by commercial decoders; it stays
+  a stretch goal (S4/S5).
 - **Async 8N1 payloads** are what real modems carried. Proposed: an optional `--async 8N1` framing
   mode for both CLIs (decision pending).
 - The recordings that decoded in the exploratory analysis become RX acceptance tests (M12),

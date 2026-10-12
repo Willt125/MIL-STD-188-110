@@ -82,14 +82,58 @@ See the status table in [`SPEC_NOTES.md`](SPEC_NOTES.md). Highlights:
    Our transmitter sends raw bytes as a synchronous bit stream (INT-016). That is valid, but a
    real modem's DTE receiving our signal would see unframed bits. **Proposal:** an `--async 8N1`
    framing option on `m110c-tx` and `m110c-rx` (M6/M12), off by default.
-2. **Sample-clock drift is far larger than the spec's tolerance.** Several recordings drift by
-   about +3500 ppm (0.35%). The spec's ±10 ppm (§4.2.1) is a transmitter requirement, but
-   captures pass through sound cards and resamplers. **The RX timing loop (M8/M10) must track at
-   least ±0.5%.** Without tracking, coherence collapses within about a second.
-3. **Carrier offsets observed:** 1784–1810 Hz, i.e. within about ±20 Hz of 1800 Hz. The ±75 Hz
-   acquisition target in the plan is comfortably wide.
+2. **Sample-clock drift exceeds the spec's tolerance in some captures.** Measured timing drift
+   (linear fit to the tracked timing over locked frames):
+
+   | Recordings | Drift |
+   |------------|-------|
+   | 2400S, 2400L, 1200S, 1200L (one sigidwiki set) | +885 to +938 ppm (≈ 0.09%) |
+   | fox, 4800, 600S/L, 300S/L, 150S/L, RadioScanner f1 | 0 to +35 ppm |
+
+   The spec's ±10 ppm (§4.2.1) is a transmitter requirement; the large values are almost
+   certainly the capture chain (sound card or resampling), since the other recordings are
+   clean. **The RX timing loop (M8/M10) should track at least ±0.2%.** Without tracking,
+   coherence collapses within about a second in the drifting set.
+   *Correction:* the first version of this report gave "+3500 ppm (0.35%)" and "±0.5%". That
+   was a units error in the analysis script (samples per symbol hard-coded as 4 in a 16-sample
+   run). The figures above replace it.
+3. **Carrier offsets observed:** 1784–1810 Hz, i.e. within about ±20 Hz of 1800 Hz. Wavecom's
+   commercial decoder allows ±400 Hz of adjustment (see below), so real-world mistuning can be
+   much larger than in these clips. **Proposal:** widen the M8 acquisition target from ±75 Hz
+   to ±400 Hz.
 4. **Probe-aided demodulation works.** Clean recordings decode with nothing more than per-frame
    gain and timing from the probes. That is a useful baseline to beat in M10.
+
+## Second batch (2026-10-12): RadioScanner.ru and Wavecom
+
+**RadioScanner.ru recording `f1.wav`** (8 kHz mono; their measured baud rate 2400.04 Bd):
+- A very clean 2400L transmission (probe coherence median 1.00, drift +3 ppm) that starts
+  mid-preamble. Its counts read **11, 10 … 0 by the text rule** (Table XII as printed gives 7, 5, 6,
+  4…): independent confirmation of INT-001 from a second source.
+- Our scrambler, probe layout and decoder run cleanly through 1108 frames. No EOM appears. The
+  payload is a short binary header followed by zeros, and the clip ends about 23 frames after
+  the last locked frame, so the message most likely continues past the end of the clip.
+- Their sonogram, autocorrelation (200 ms period, one preamble segment) and constellation
+  images agree with the spec and with our analysis.
+
+**Wavecom's product page for its MIL-188-110A decoder** (a screenshot was supplied). This is
+secondary documentation from a commercial decoder vendor, not a measurement:
+- User data "is generally transmitted in binary mode, i.e., in a transparent mode". The decoder
+  offers **ASCII SYNC (each 8 bits LSB first)**, which is our default (INT-016), and **ASCII
+  ASYNC (start bit 0, 8 data bits LSB first, at least one stop bit 1)**, the framing found in
+  the sigidwiki recordings.
+- A **Polarity** setting, NOR = USB and INV = LSB, confirms that sideband inversion (INT-021)
+  needs handling in practice.
+- Centre frequency adjustable by **±400 Hz**, and the decoder "synchronises both on the preamble
+  and on the probe sequence", i.e. late entry without a preamble (our stretch goal S5).
+- Its mode table matches ours, including 4800 bps as "ZERO (No interleaver)" (INT-022).
+
+**Transmission length across modes (supports INT-013).** The number of frames over which our
+tracking stays locked is an exact whole number of interleaver blocks in 7 recordings: 1200S
+(17 blocks), 1200L (5), 2400L (1), 600S (7), 600L (4), 300S (9), 300L (1). The 150 bps
+recordings and the short 2400S clip do not divide evenly. They decode correctly, so this is
+more likely imprecision in the locked-frame count near the end of the signal than a real
+deviation. This is supporting evidence, not proof.
 
 ## Limitations
 
