@@ -44,7 +44,7 @@ could be tested.
 | INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
 | INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
 | Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
-| INT-012, 014, 015, 017, 018, 022, 023 | n/a | implementer choices; recordings cannot confirm or refute them |
+| INT-012, 014, 015, 017, 018, 022, 023, 026 | n/a | implementer choices; recordings cannot confirm or refute them |
 
 ---
 
@@ -192,10 +192,18 @@ The spec defines no idle fill. The encoder blocks on input. EOF means the end of
 ### INT-018: False EOM detection inside user data. *Unspecified, High*
 The EOM is not escaped. Any 32-bit window of user data equal to 0x4B65A5B2 would truncate the
 message. That is about N/2³² per message: roughly 0.2% for 1 MB.
-**Decision:** RX accepts an EOM candidate only if it is followed by flush zeros, all 144 coded
-flush bits after decoding (with a small error allowance), or by the end of the signal. RX
-treats an unconfirmed candidate as data.
-**Tests:** a message with the EOM pattern planted at, and off, byte alignment.
+**Decision (implemented in M7, `rx/eom.py`):** an EOM is accepted at position p when
+- the 32 bits at p are within **2 bit errors** of the EOM (so one or two decoding errors cannot
+  make a message run on forever), and
+- the next **144** decoded bits (the coder flush) contain **at most 14 ones** (about 10%), or,
+  if the signal ends first, at least 32 flush bits were received with the same proportion.
+
+Otherwise the candidate is treated as data. Random data passes both tests with probability
+about 1e-7 × 1e-25 per position. **Residual risk, pinned by a test:** user data that contains the
+EOM followed by 144+ zero bits *is* taken as the end of the message. A spec-conformant
+transmitter cannot prevent this.
+**Tests:** `tests/unit/test_rx_eom.py`: planted EOMs with and without trailing zeros, 0–3 EOM
+errors, 14/15 flush errors, truncated flushes, chunk invariance, bounded holdback.
 
 ### INT-019: Unimplemented D1/D2 combinations. *Resolved by text, High*
 RX treats 7,7 (digital voice), reserved (long + 4800/voice) and 5,6/5,7 (application-specific)
@@ -252,9 +260,26 @@ delivered, and counted.
 chunk invariance, error counting, and decoding the real modem's fox payload with zero framing
 errors (`test_irl_fox.py`).
 
+### INT-026: The EOM sequence overlaps itself. *Errata-like, High*
+0x4B65A5B2 written in bits is `010010110110010 11 010010110110010`: the same 15-bit block X
+twice, separated by `11`. So if a message happens to **end** with the EOM's first 17 bits
+(`X 11`), the window starting 17 bits before the real EOM is *also* an exact EOM match, and its
+"flush" (the real EOM's last 17 bits, then zeros) has few enough ones to pass INT-018's check.
+A detector that takes the first match, even an exact-match detector, would end such a
+message 17 bits early and lose its tail. With exact matching this happens to about 1 message in
+130,000 (2⁻¹⁷); with a 2-error tolerance, about 1 in 850.
+Nothing in the spec addresses this, and it cannot be prevented at the transmitter.
+**Decision:** after the first passing candidate, check every candidate overlapping it and take
+the **last** one that passes. Nothing can pass after the real EOM: the flush zeros keep every
+later window at least 7 bits from the EOM (computed). Cost: 31 more bits of holdback.
+**Tests:** `test_int_026_message_ending_with_the_eom_prefix_is_not_cut_short` builds exactly this
+case and checks that the trap is real. The mutation "first candidate wins" fails it.
+
 ---
 
 ## Candidate errata to report upstream
 - INT-001 (Table XII bit order).
+- INT-026 (EOM self-overlap: a message ending in the EOM's first 17 bits creates an exact early
+  match). Not an error in the text, but a hazard the standard should mention.
 - §5.3.2.3.7.2.2 note: "to produce 8 pattern of 16 tribit numbers" means "a pattern".
 - The Appendix E table of contents has a broken cross-reference ("Error! Bookmark not defined").

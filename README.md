@@ -8,6 +8,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 - [`docs/PLAN.md`](docs/PLAN.md): scope, architecture, testing strategy and milestones.
 - [`docs/VALIDATION.md`](docs/VALIDATION.md): the transmit chain checked against real 188-110A
   recordings. Our transmitter reproduces a fielded modem's output symbol for symbol.
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md): measured error rates (so far: the genie-aided
+  receiver on AWGN, matching theory).
 - [`docs/SPEC_NOTES.md`](docs/SPEC_NOTES.md): every ambiguity or error in the spec, and how
   this implementation reads it. Code and tests refer to these entries as `INT-nnn`.
 
@@ -23,7 +25,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M5 Transmit framer (+ golden vectors) | done |
 | External validation of M1–M5 vs real recordings | done |
 | M6 Modulator and `m110c-tx` CLI | done |
-| M7 Genie-aided receiver | next |
+| M7 Genie-aided receiver | done |
+| M8 Acquisition | next |
 
 ## Transmitting
 
@@ -38,7 +41,8 @@ The output is complex baseband at 9600 samples/s with the carrier at +1800 Hz, s
 is the audio for an upper-sideband transmitter. Options: `--rate` 75–4800, `--interleave`
 zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (a multiple of 2400),
 `--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`.
-`m110c-tx --help` lists them all. A receiver (`m110c-rx`) is not written yet.
+`m110c-tx --help` lists them all. The receiver's decoding chain exists (`m110c.rx`), but
+synchronisation does not yet, so there is no `m110c-rx` command yet.
 
 ## Development
 
