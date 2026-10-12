@@ -211,6 +211,12 @@ def rx_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="input is lower sideband (spectrum inverted, INT-021)",
     )
+    p.add_argument(
+        "--no-equalizer",
+        dest="equalize",
+        action="store_false",
+        help="track a single gain instead of equalising multipath (the M8 receiver)",
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="no per-message reports on stderr")
     return p
 
@@ -264,6 +270,7 @@ def rx_main(argv=None) -> int:
             async_format=args.async_format,
             zero_interleave=args.zero_interleave,
             invert_spectrum=args.invert_spectrum,
+            equalize=args.equalize,
         )
         frame = io.bytes_per_sample(args.format) * channels
         leftover = b""

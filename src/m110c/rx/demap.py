@@ -49,9 +49,10 @@ def _label_table(bits_per_symbol: int):
 _TABLES = {n: _label_table(n) for n in (1, 2, 3)}
 
 
-def soft_bits(y: np.ndarray, bits_per_symbol: int, noise_var: float = 1.0) -> np.ndarray:
+def soft_bits(y: np.ndarray, bits_per_symbol: int, noise_var=1.0) -> np.ndarray:
     """Max-log LLRs for descrambled data symbols; ``bits_per_symbol`` LLRs per symbol, in
-    the order the bits were fetched from the interleaver (first = MSB, INT-009)."""
+    the order the bits were fetched from the interleaver (first = MSB, INT-009).
+    ``noise_var`` is one number, or one per symbol."""
     points, labels = _TABLES[bits_per_symbol]
     y = np.asarray(y, dtype=complex)
     dist = np.abs(y[:, None] - points[None, :]) ** 2  # (symbols, points)
