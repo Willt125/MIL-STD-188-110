@@ -11,6 +11,17 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        openblas-coretype: ["auto"]
+        # The same tests with other OpenBLAS kernels. Rounding differs between kernels, and
+        # a receiver result that depends on it is a bug (M10: a singular least-squares
+        # solve passed on AVX-512 and failed on AVX2). "auto" is whatever the runner's CPU
+        # selects; Haswell is AVX2, Prescott the generic SSE3 kernel.
+        include:
+          - python-version: "3.13"
+            openblas-coretype: "Haswell"
+          - python-version: "3.13"
+            openblas-coretype: "Prescott"
+    name: test (${{ matrix.python-version }}, OpenBLAS ${{ matrix.openblas-coretype }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,5 +31,10 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Lint
         run: ruff check . && ruff format --check .
+      - name: Select the OpenBLAS kernel
+        if: matrix.openblas-coretype != 'auto'
+        run: echo "OPENBLAS_CORETYPE=${{ matrix.openblas-coretype }}" >> "$GITHUB_ENV"
+      - name: Show the OpenBLAS kernel in use
+        run: OPENBLAS_VERBOSE=2 python -c "import numpy"
       - name: Test
         run: pytest -m "not slow"
