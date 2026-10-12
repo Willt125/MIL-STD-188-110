@@ -26,7 +26,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | External validation of M1–M5 vs real recordings | done |
 | M6 Modulator and `m110c-tx` CLI | done |
 | M7 Genie-aided receiver | done |
-| M8 Acquisition | next |
+| M8 Acquisition, tracking and `m110c-rx` | done |
+| M9 Watterson HF channel simulator | next |
 
 ## Transmitting
 
@@ -41,8 +42,22 @@ The output is complex baseband at 9600 samples/s with the carrier at +1800 Hz, s
 is the audio for an upper-sideband transmitter. Options: `--rate` 75–4800, `--interleave`
 zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (a multiple of 2400),
 `--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`.
-`m110c-tx --help` lists them all. The receiver's decoding chain exists (`m110c.rx`), but
-synchronisation does not yet, so there is no `m110c-rx` command yet.
+`m110c-tx --help` lists them all.
+
+## Receiving
+
+```sh
+m110c-rx signal.cf32 -o message.txt
+m110c-tx < message.txt | m110c-rx > copy.txt                       # a loopback through pipes
+m110c-rx --format wav --async 8N1 recording.wav                    # e.g. a real 188-110 capture
+```
+
+The receiver finds each transmission by itself: it searches ±400 Hz around the 1800-Hz
+carrier, reads the mode from the preamble, tracks timing (±0.2% clock error), carrier and gain,
+and stops at each end-of-message marker before searching for the next. A report per message goes
+to stderr. Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
+`--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
+resample other rates first, e.g. `sox in.wav -r 9600 out.wav`).
 
 ## Development
 

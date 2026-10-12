@@ -135,11 +135,30 @@ recordings and the short 2400S clip do not divide evenly. They decode correctly,
 more likely imprecision in the locked-frame count near the end of the signal than a real
 deviation. This is supporting evidence, not proof.
 
+## The M8 receiver on the same recordings (2026-10-12)
+
+The exploratory demodulator above was replaced by the real receiver, `m110c-rx`. It is fully
+automatic: no genie, no hand-tuned parameters. Recordings converted to 9600-Hz mono WAV with
+ffmpeg, then `m110c-rx -f wav --async 8N1`:
+
+| Recording | Result |
+|-----------|--------|
+| fox (2400S) | 560 characters, perfect, EOM |
+| 150S, 150L | fox text, perfect, EOM |
+| 1200L, 600L | plain text (`V V V DE BDA21 …`, `V V V DE BXT78 …`), EOM. The exploratory run never found 600L's EOM |
+| 2400L, 2400S, 1200S, 600S, 300S, 300L, 75S, 75L | EOM found; binary payloads as before |
+| 4800 | EOM found; text corrupts after ~25 characters (uncoded 8-PSK on a real channel needs the M10 equaliser) |
+| RadioScanner f1 (2400L, clip starts mid-preamble) | tracked to the end of the clip; "signal lost, no EOM" (the clip is cut off) |
+
+Measured carrier offsets were −16 to +11 Hz, and transmitter clock offsets up to about ±1400 ppm
+were tracked automatically. The reported SNRs (0.7–20 dB) are pessimistic for clips this
+clean; that is listed for M10.
+
 ## Limitations
 
-- The exploratory demodulator is not committed. Its method is described above so the analysis
-  can be redone; the real receiver (M7–M10) will supersede it, and the recordings that decoded
-  here become its acceptance tests.
+- The exploratory demodulator is not committed; the real receiver (`m110c-rx`, above) has
+  superseded it. The recordings remain outside the repository, so these runs are manual
+  acceptance checks, not CI tests.
 - Only one recording (the fox) has known plaintext. For the others, "EOM found" proves that the
   chain inverts correctly, not that every bit is right. Readable text proves it for those files.
 - Zero-interleave flush padding (INT-013, no interleaver) and 75 bps with zero interleave were

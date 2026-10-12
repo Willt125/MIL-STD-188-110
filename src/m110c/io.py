@@ -142,3 +142,30 @@ def _seekable(stream) -> bool:
         return stream.seekable()
     except (AttributeError, ValueError, OSError):
         return False
+
+
+def read_wav_header(stream) -> tuple[int, int]:
+    """Read a PCM WAV header from a stream, stopping at the start of the sample data.
+
+    Walks the RIFF chunk list (other chunks, e.g. LIST, are skipped), so it works on
+    pipes too. Returns (sample_rate, channels). Only 16-bit PCM is supported.
+    """
+    head = stream.read(12)
+    if len(head) < 12 or head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+        raise ValueError("not a WAV file")
+    sample_rate = channels = None
+    while True:
+        chunk = stream.read(8)
+        if len(chunk) < 8:
+            raise ValueError("WAV file has no data chunk")
+        kind, size = chunk[:4], struct.unpack("<I", chunk[4:8])[0]
+        if kind == b"data":
+            if sample_rate is None:
+                raise ValueError("WAV data chunk before fmt chunk")
+            return sample_rate, channels
+        body = stream.read(size + (size & 1))  # chunks are padded to even length
+        if kind == b"fmt ":
+            fmt_tag, channels, sample_rate = struct.unpack("<HHI", body[:8])
+            bits = struct.unpack("<H", body[14:16])[0]
+            if fmt_tag not in (1, 0xFFFE) or bits != 16:
+                raise ValueError("only 16-bit PCM WAV is supported")

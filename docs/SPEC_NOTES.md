@@ -144,7 +144,7 @@ with INT-006.
 ### INT-012: Zero and short interleave are indistinguishable at RX. *Unspecified, High*
 Table XI assigns the same D1/D2 to both. The note says the two ends must coordinate, and lists
 automatic selection as a design objective.
-**Decision (v1):** RX assumes short; `--zero-interleave` overrides. Automatic detection is
+**Decision (v1):** RX assumes short; `--zero-interleave` overrides (implemented in M8, tested). Automatic detection is
 stretch goal S4. One approach is to decode the first block both ways and compare Viterbi path
 metrics.
 
@@ -208,6 +208,8 @@ errors, 14/15 flush errors, truncated flushes, chunk invariance, bounded holdbac
 ### INT-019: Unimplemented D1/D2 combinations. *Resolved by text, High*
 RX treats 7,7 (digital voice), reserved (long + 4800/voice) and 5,6/5,7 (application-specific)
 as "not implemented". It keeps searching rather than synchronizing on them.
+**Tests (M8):** a synthetic digital-voice preamble (D1, D2 = 7, 7) is ignored, and a real
+preamble right after it is still found.
 
 ### INT-020: Symbol formation maps (Figure 5). *Interpretation, High*
 One-bit symbols: 0→0, 1→4. Two-bit symbols (after the MGD): `00→0, 01→2, 10→4, 11→6`.
@@ -218,7 +220,7 @@ Three-bit symbols: identity. Figure 5 shows this; the text (§5.3.2.3.7.1.1) giv
 Tribit k is sent as phase +45°·k, counter-clockwise, so complex baseband symbol = e^{jπk/4}.
 The audio is Re{s(t)·e^{j2π·1800t}}. Feeding the audio to an LSB transmitter, or reading I/Q
 with I and Q swapped, mirrors the spectrum. The result looks like 8PSK with the rotation sense
-reversed, so k becomes −k mod 8. RX will offer `--invert-spectrum`. Acquisition could also try
+reversed, so k becomes −k mod 8. RX offers `--invert-spectrum` (implemented and tested in M8). Acquisition could also try
 both senses, because the preamble correlation fails cleanly in the wrong one.
 
 ### INT-022: How 4800 bps is labelled. *Unspecified, High*
