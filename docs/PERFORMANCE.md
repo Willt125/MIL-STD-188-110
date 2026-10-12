@@ -174,6 +174,11 @@ Things found on the way, each now covered by a test:
   after a transmission looked like a −1.5 dB signal; the probe correlation does not.
 - Single-threaded BLAS: the thousands of 40×40 solves per second ran 50× slower with
   OpenBLAS threads, under load.
+- Known symbols are not always pseudo-random. The end of a long preamble repeats every 32
+  symbols, which makes the wide least-squares problem singular; the answer then depended on
+  the CPU's BLAS kernel. It passed here (AVX-512) and failed in CI (every long-preamble mode
+  lost), until a 1e-6 ridge made it well defined. Reproduce kernel differences locally with
+  `OPENBLAS_CORETYPE=Haswell`.
 
 ### Speed
 

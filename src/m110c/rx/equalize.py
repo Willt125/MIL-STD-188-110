@@ -96,6 +96,7 @@ PATH_SWITCH_TAPS = 1.5  # a bigger jump in the strongest path's position is a di
 TIMING_DAMPING = 0.7
 FREQUENCY_TIME_CONSTANT_S = 1.0
 SUB_BLOCK = 8  # symbols per equaliser coefficient update
+RIDGE = 1e-6  # least squares: regularisation relative to the average symbol energy
 LOSS_SECONDS = 1.0
 LOSS_SNR_DB = -6.0  # as a power share, 0.2, averaged over LOSS_SECONDS; noise alone gives ~0
 
@@ -111,11 +112,20 @@ def estimate_channel(r, S, noise_var=None, prior=None):
     Without a ``prior`` this is least squares, h = (S^H S)^-1 S^H r. With one (the expected
     power of each tap), it is the LMMSE estimate (S^H S + N diag(1/prior))^-1 S^H r, which
     shrinks taps the prior says are weak. Returns (h, residual noise variance per
-    observation). (The normal equations are well conditioned here: the symbols are
-    pseudo-random, so S^H S is close to a multiple of the identity.)
+    observation).
+
+    Data symbols are pseudo-random, so S^H S is close to a multiple of the identity. Known
+    symbols need not be: at the end of a long preamble the count slots are identical and
+    every slot is scrambled alike, so the symbols repeat every 32, and two taps 32 apart
+    have identical columns. S^H S is then singular, and the solution in that direction is
+    whatever the rounding of the BLAS in use produces (a phantom path 15 symbols early, on
+    one CPU and not another). A tiny ridge, 1e-6 of the average diagonal, sets it to zero
+    instead: the data say nothing there, and every other tap moves by about 1e-6.
     """
     gram = S.conj().T @ S
     if prior is None:
+        scale = np.real(np.trace(gram)) / gram.shape[0]
+        gram = gram + RIDGE * max(scale, 1e-300) * np.eye(gram.shape[0])
         dof = max(1, S.shape[0] - S.shape[1])
     else:
         gram = gram + noise_var * np.diag(1 / prior)

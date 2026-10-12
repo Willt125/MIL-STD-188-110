@@ -80,7 +80,24 @@ def test_least_squares_recovers_the_channel_exactly_without_noise():
     h = psk(9) * np.linspace(1, 0.1, 9)
     S = np.array([psk(9) for _ in range(40)])
     estimate, noise = E.estimate_channel(S @ h, S)
-    assert np.allclose(estimate, h) and noise < 1e-20
+    assert np.allclose(estimate, h) and noise < 1e-9  # the ridge leaves ~1e-6 of the taps
+
+
+def test_least_squares_with_periodic_known_symbols():
+    """The end of a long preamble repeats every 32 symbols, so over a 41-tap span taps j and
+    j+32 cannot be told apart and S^H S is singular. Taps the data cannot see must come out
+    zero, not as whatever the BLAS rounding makes of a singular solve (in CI, a phantom
+    path at -15 that wrecked every long-preamble mode on one CPU type)."""
+    offsets = np.arange(-20, 21)
+    period = psk(32)
+    s = np.tile(period, 10)
+    ks = np.arange(60, 60 + 123)
+    S = E.convolution_matrix(s, 0, ks, offsets)
+    assert np.linalg.matrix_rank(S.conj().T @ S) < offsets.size  # really singular
+    h = np.zeros(offsets.size, complex)
+    h[[20, 21, 24]] = [1.0, 0.3j, -0.5]  # taps 0, 1, 4: not aliased with each other
+    estimate, _ = E.estimate_channel(S @ h, S)
+    assert np.allclose(estimate, h, atol=1e-5)
 
 
 def test_noise_variance_estimate():
