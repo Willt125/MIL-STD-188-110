@@ -10,8 +10,9 @@ from hypothesis import strategies as st
 from m110c import scrambler, symbols
 from m110c.channel.awgn import add_awgn
 from m110c.channel.impairments import fractional_delay, frequency_offset
+from m110c.channel.watterson import ChannelSpec, WattersonChannel
 from m110c.modulate import modulate
-from m110c.rx.acquire import PreambleSearch, slot_waveforms
+from m110c.rx.acquire import PreambleSearch, read_segment, slot_waveforms
 from m110c.spec import mode
 from m110c.spec import tables as T
 from m110c.tx import transmit_bytes
@@ -200,3 +201,100 @@ def test_corrupted_prefix_is_rejected():
     x = np.concatenate([np.zeros(1000, complex), modulate(tri), np.zeros(3000, complex)])
     search = PreambleSearch(threshold=0.03)  # low enough that the candidate reaches the checks
     assert search.process(x) is None and search.flush() is None
+
+
+def preamble_75l(counts, bad_prefix=(), silent=()):
+    """A 75L preamble whose segments carry ``counts``, with two prefix slots wrong in the
+    segments listed in ``bad_prefix`` and the segments in ``silent`` not sent at all."""
+    m = mode(75, "long")
+    tribits = []
+    for i, count in enumerate(counts):
+        prefix = list(T.PREAMBLE_FIXED_PREFIX)
+        if i in bad_prefix:
+            prefix[2], prefix[5] = 7, 6
+        cs = [*prefix, *m.d1_d2, *symbols.count_symbols(count), 0]
+        tribits += [t for c in cs for t in T.TABLE_XIII[c]]
+    tri = scrambler.scramble(np.array(tribits, np.uint8), scrambler.sync_sequence(0, len(tribits)))
+    x = modulate(tri)
+    for i in silent:
+        x[i * 480 * 4 : (i + 1) * 480 * 4] = 0
+    return np.concatenate([np.zeros(1000, complex), x, np.zeros(3000, complex)])
+
+
+@pytest.mark.parametrize(
+    "case, expected_segment",
+    [
+        ({}, 1),
+        # The next segment is unreadable: the one after decides.
+        ({"silent": (1,)}, 2),
+        # The next segment's prefix has two slots wrong (enough to reject it as a detection
+        # of its own), but its count still contradicts.
+        ({"bad_prefix": (1,)}, 2),
+        ({"bad_prefix": (1,), "silent": (2,)}, 3),
+    ],
+    ids=["next", "after an unreadable one", "with a damaged prefix", "only the damaged one"],
+)
+def test_a_count_contradicted_by_the_next_segments_is_rejected(case, expected_segment):
+    """A fade can turn the count slots into another valid count; the next segments must
+    count down from it. Here the first segment of a 75L preamble claims 18 while the rest
+    count down from 22, so it is rejected and a later, confirmed segment accepted."""
+    d = first_detection(preamble_75l((18, *range(22, -1, -1)), **case))
+    assert d is not None and d.count == 23 - expected_segment
+    assert abs(d.segment_start - (1000 + expected_segment * 480 * 4)) < 0.1
+
+
+@pytest.mark.parametrize(
+    "counts, silent",
+    [
+        (range(23, -1, -1), (1,)),  # confirmed two segments on: 21 = 23 - 2
+        (range(23, -1, -1), (1, 2)),  # nothing readable after it: nothing contradicts
+        ((23, 22, 5, *range(20, -1, -1)), ()),  # the first readable segment decides
+    ],
+    ids=["two on", "unreadable", "first decides"],
+)
+def test_a_count_that_is_not_contradicted_stands(counts, silent):
+    """The 75L count 23, at the start of the preamble, with later segments as listed."""
+    d = first_detection(preamble_75l(counts, silent=silent))
+    assert d is not None and d.count == 23 and abs(d.segment_start - 1000) < 0.1
+
+
+# --- Fading (M11) -------------------------------------------------------------------------
+
+
+def test_slots_are_read_through_a_wandering_phase():
+    """On a fading channel the phase does not follow a straight line. Here it is flat over
+    the prefix and then turns by 0.6 rad per slot, so a ramp fitted to the prefix and
+    extrapolated is 90 degrees wrong by the third count slot. Reading each slot against the
+    one before it follows the turn."""
+    sps = 4
+    waveforms = slot_waveforms(sps)
+    slot = 32 * sps
+    m = mode(150, "long")
+    channel = symbols.preamble_channel_symbols(m)[:15]  # first segment
+    phase = np.where(np.arange(15) < 9, 0.0, 0.6 * (np.arange(15) - 8))
+    z = np.zeros(15 * slot + waveforms.shape[1], dtype=complex)
+    for j, v in enumerate(channel):
+        z[j * slot : j * slot + waveforms.shape[1]] += waveforms[v] * np.exp(1j * phase[j])
+    decided, residual_hz, prefix_errors = read_segment(z, 0, 0.0, waveforms, slot, 9600)
+    assert decided == [int(v) for v in channel] and prefix_errors == 0
+
+
+def test_short_preambles_are_acquired_on_a_5_hz_fading_channel():
+    """Table XVI's hardest channel (2 paths, 5 ms, 5 Hz) at the 75-bps SNR, 2 dB, with only
+    a 0.6-s preamble. Measured over 20 channels: 16 acquired before slot reading followed
+    the phase, 19 after."""
+    m = mode(75, "short")
+    acquired = 0
+    for seed in range(10):
+        x = np.concatenate(
+            [
+                np.zeros(4000, complex),
+                modulate(transmit_bytes(b"x" * 20, m)),
+                np.zeros(9600, complex),
+            ]
+        )
+        y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 2.0), seed=1000 + seed).process(x)
+        search = PreambleSearch()
+        found = search.process(y) or search.flush()
+        acquired += found is not None and found.mode == m
+    assert acquired >= 9
