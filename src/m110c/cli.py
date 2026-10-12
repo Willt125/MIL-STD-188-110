@@ -6,6 +6,10 @@
     m110c-tx < message.txt | m110c-rx > copy.txt
     m110c-rx --format wav --async 8N1 recording.wav
 
+``m110c-chan``: samples in, samples out through a simulated HF channel (Appendix E)::
+
+    m110c-tx < msg.txt | m110c-chan --preset "2 fading 2 ms 1 Hz" --snr 18 | m110c-rx
+
 ``m110c-tx``: data in (file or stdin), samples out (file or stdout)::
 
     m110c-tx --rate 2400 --interleave long message.txt -o signal.cf32
@@ -21,6 +25,8 @@ import argparse
 import contextlib
 import os
 import sys
+
+import numpy as np
 
 from . import framing, io
 from .modulate import Modulator
@@ -286,11 +292,139 @@ def _report(receiver, reported: int, sample_rate: int, quiet: bool) -> int:
     return len(receiver.messages)
 
 
+def chan_parser() -> argparse.ArgumentParser:
+    from .channel.watterson import DEFAULT_SIGNAL_POWER, TABLE_XVI_CHANNELS
+
+    p = argparse.ArgumentParser(
+        prog="m110c-chan",
+        description="Watterson HF channel simulator (MIL-STD-188-110C App. E): samples in and out.",
+    )
+    p.add_argument("input", nargs="?", default="-", help="input file (default: stdin)")
+    p.add_argument("-o", "--output", default="-", help="output file (default: stdout)")
+    p.add_argument(
+        "-f",
+        "--format",
+        default="cf32",
+        choices=io.FORMATS,
+        help="input and output format (default cf32)",
+    )
+    p.add_argument(
+        "-s",
+        "--sample-rate",
+        type=int,
+        default=9600,
+        help="samples per second (default 9600; WAV: header)",
+    )
+    p.add_argument(
+        "--preset", choices=sorted(TABLE_XVI_CHANNELS), help="a Table XVI channel condition"
+    )
+    p.add_argument(
+        "--paths", type=int, choices=(1, 2), default=2, help="propagation paths (default 2)"
+    )
+    p.add_argument(
+        "--delay-ms", type=float, default=2.0, help="delay spread between the paths (default 2 ms)"
+    )
+    p.add_argument(
+        "--doppler",
+        type=float,
+        default=1.0,
+        help="fading bandwidth (two sigma) per path, Hz; 0 = no fading",
+    )
+    p.add_argument("--snr", type=float, help="SNR in dB in a 3-kHz bandwidth (default: no noise)")
+    p.add_argument(
+        "--signal-power",
+        type=float,
+        default=DEFAULT_SIGNAL_POWER,
+        help=f"average input power the SNR refers to (default {DEFAULT_SIGNAL_POWER}, as m110c-tx)",
+    )
+    p.add_argument(
+        "--offset-hz", type=float, default=0.0, help="also shift the frequency (mistuning), Hz"
+    )
+    p.add_argument(
+        "--seed", type=int, default=0, help="random seed (default 0); output is reproducible"
+    )
+    p.add_argument("-q", "--quiet", action="store_true", help="no summary on stderr")
+    return p
+
+
+def chan_main(argv=None) -> int:
+    from dataclasses import replace
+
+    from .channel.watterson import TABLE_XVI_CHANNELS, Analytic, ChannelSpec, WattersonChannel
+
+    args = chan_parser().parse_args(argv)
+    if args.preset:
+        spec = replace(TABLE_XVI_CHANNELS[args.preset], snr_db=args.snr)
+    else:
+        spec = ChannelSpec(args.paths, args.delay_ms, args.doppler, args.snr)
+    try:
+        source = _open_in(args.input)
+    except OSError as exc:
+        print(f"m110c-chan: {exc}", file=sys.stderr)
+        return 1
+    with source as infile, _open_out(args.output) as sink:
+        sample_rate, channels = args.sample_rate, 1
+        if args.format == "wav":
+            try:
+                sample_rate, channels = io.read_wav_header(infile)
+            except ValueError as exc:
+                print(f"m110c-chan: {exc}", file=sys.stderr)
+                return 1
+        channel = WattersonChannel(
+            spec, sample_rate, seed=args.seed, signal_power=args.signal_power
+        )
+        real = args.format in ("s16", "wav")
+        analytic = Analytic() if real else None  # E.4.2: a real input is made analytic first
+        writer = io.SampleWriter(sink, args.format, sample_rate)
+        frame = io.bytes_per_sample(args.format) * channels
+        leftover, n_in, n_out = b"", 0, 0
+        # The Hilbert filter delays its output; drop that many leading samples and flush it
+        # at the end, so the output lines up with the input and nothing is lost.
+        skip = analytic.delay if real else 0
+
+        def emit(x):
+            nonlocal n_out, skip
+            drop = min(skip, x.size)
+            skip -= drop
+            x = x[drop:]
+            n = n_out + np.arange(x.size)
+            n_out += x.size
+            writer.write(channel.process(x) * np.exp(2j * np.pi * args.offset_hz * n / sample_rate))
+
+        for piece in _read_pieces(infile):
+            data = leftover + piece
+            usable = len(data) - len(data) % frame
+            leftover = data[usable:]
+            x = io.decode_samples(data[:usable], args.format)
+            n_in += x.size // channels
+            if channels > 1:
+                x = x.reshape(-1, channels).mean(axis=1)
+            emit(analytic.process(x.real) if real else x)  # real formats: real part out (E.4.2)
+        if real:
+            emit(analytic.flush())
+        writer.close()
+    if not args.quiet:
+        snr = "no noise" if spec.snr_db is None else f"SNR {spec.snr_db:g} dB"
+        fading = f"{spec.doppler_hz:g} Hz fading" if spec.fading else "no fading"
+        print(
+            f"m110c-chan: {spec.paths} path(s), {spec.delay_ms:g} ms, {fading}, {snr}; "
+            f"{n_in} samples",
+            file=sys.stderr,
+        )
+    if writer.clipped:
+        print(f"m110c-chan: warning: {writer.clipped} samples clipped", file=sys.stderr)
+    return 0
+
+
 EXIT_BROKEN_PIPE = 128 + 13  # what a shell reports for a process killed by SIGPIPE
 
 
 def main_rx() -> None:  # console-script entry point
     _run(rx_main)
+
+
+def main_chan() -> None:  # console-script entry point
+    _run(chan_main)
 
 
 def main_tx() -> None:  # console-script entry point
@@ -309,8 +443,8 @@ def _run(main) -> None:
 
 if __name__ == "__main__":
     # "python -m m110c.cli rx ..." runs the receiver; anything else the transmitter.
-    if len(sys.argv) > 1 and sys.argv[1] == "rx":
-        del sys.argv[1]
-        main_rx()
+    commands = {"rx": main_rx, "chan": main_chan}
+    if len(sys.argv) > 1 and sys.argv[1] in commands:
+        commands[sys.argv.pop(1)]()
     else:
         main_tx()

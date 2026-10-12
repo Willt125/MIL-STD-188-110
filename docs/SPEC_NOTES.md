@@ -44,6 +44,7 @@ could be tested.
 | INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
 | INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
 | Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
+| INT-027 Doppler spread = 2σ; INT-028 E.5.2 erratum | Resolved by text | Appendix E itself; simulator validated against E.7 |
 | INT-012, 014, 015, 017, 018, 022, 023, 026 | n/a | implementer choices; recordings cannot confirm or refute them |
 
 ---
@@ -277,6 +278,22 @@ later window at least 7 bits from the EOM (computed). Cost: 31 more bits of hold
 **Tests:** `test_int_026_message_ending_with_the_eom_prefix_is_not_cut_short` builds exactly this
 case and checks that the trap is real. The mutation "first candidate wins" fails it.
 
+### INT-027: "Fading bandwidth" is two sigma of a Gaussian Doppler spectrum. *Resolved by text, High*
+Table XVI gives "Fading (Note 1) BW (Hz)" and labels it "two sigma"; Appendix E.5.4 defines the
+fading filter's power spectrum as a Gaussian with σ = d/2, |H(f)|² ∝ e^(−2f²/d²), and its impulse
+response f(t) = k√2·e^(−π²t²d²) (consistent: one is the Fourier transform of the other).
+**Decision:** the simulator's `doppler_hz` is d = 2σ. Mixing this up with σ would make every
+fading condition twice as harsh, or half as harsh.
+**Tests:** the Doppler spectrum meets Table E-I (deviation ≤ 0.4 dB at −20 and −30 dB, allowed
+1.5/2.0). The mutation "d taken as σ" fails it.
+
+### INT-028: Appendix E.5.2 divides by the sample *rate*. *Errata, High*
+E.5.2: "L, shall be computed as the specified delay spread divided by the sample rate, and
+rounded". That is dimensionally wrong (2 ms ÷ 9600 S/s ≈ 2×10⁻⁷). E.4.2 says "divided by the
+sampling period", which gives the intended number of samples (19.2 → 19 at 9600 S/s).
+**Decision:** L = round(delay × sample rate). **Tests:** taps at 0 and 19 (2 ms), 48 (5 ms),
+96 (2 ms at 48 kHz), and 5 for 0.5 ms (4.8 rounds up; truncation would give 4).
+
 ---
 
 ## Candidate errata to report upstream
@@ -285,3 +302,5 @@ case and checks that the trap is real. The mutation "first candidate wins" fails
   match). Not an error in the text, but a hazard the standard should mention.
 - §5.3.2.3.7.2.2 note: "to produce 8 pattern of 16 tribit numbers" means "a pattern".
 - The Appendix E table of contents has a broken cross-reference ("Error! Bookmark not defined").
+- INT-028: E.5.2 "divided by the sample rate" should read "sampling period" (as E.4.2 says).
+- E.7.3 refers to "the tests described in H 7.2"; it means E.7.2.

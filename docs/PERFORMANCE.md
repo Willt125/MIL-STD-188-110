@@ -70,3 +70,45 @@ frequency tracking every mode fails at 3.5 Hz/s); 2400S at 10 dB, 1200L at 6 dB,
 **Known limits** (M10 work): cubic interpolation of the matched-filter output caps tracked SNR
 at about 35 dB (−34 dB worst-case error at the band edge). Speed: acquisition about 17× real
 time at 9600 S/s.
+
+## M9: the Appendix E channel simulator, validated (2026-10-12)
+
+`channel/watterson.py` and `m110c-chan`, checked against Appendix E.7. The long averages E.7
+asks for (20 minutes to 3 hours) are done on the fading process at its own 32 × d rate, where
+3 hours is cheap; the full chain is checked over 1–10 minutes.
+
+| Check | Requirement | Measured |
+|-------|-------------|----------|
+| E.7.1 flatness at 1050 / 1800 / 2550 Hz (real input, Hilbert transform) | ±0.5 dB | −0.005 / −0.004 / −0.003 dB |
+| E.7.2 SNR, fixed path, 0/10/20 dB (60 s) | ±0.25 dB | exact to 0.001 dB |
+| E.7.3 mean power through fading, 1 and 2 paths, 1 and 10 Hz (10 min) | ±0.5 dB | −0.05 to +0.11 dB |
+| E.7.4 / Table E-I Doppler spectrum, 1 Hz, deviation at −20 dB | ±1.5 dB | −0.35 / −0.25 dB |
+| E.7.4 / Table E-I Doppler spectrum, 1 Hz, deviation at −30 dB | ±2.0 dB | +0.17 / +0.27 dB |
+| Fading statistics | Rayleigh | P(\|h\|² < 0.1 × mean) within 0.01 of 1 − e^−0.1 |
+
+## Table XVI baseline: the M8 receiver on simulated HF channels (2026-10-12)
+
+Long interleave (§5.3.2.5), the specified SNR, two independent channel seeds per row, about 6 s
+of payload each. **This is the starting point for M10, not a result to keep.**
+
+| Rate | Channel | SNR | Required BER | Measured BER | EOM found |
+|------|---------|-----|--------------|--------------|-----------|
+| 4800 | 1 fixed | 17 dB | ≤ 1e-3 | **0** (48 000 bits) | 2/2 |
+| 2400 | 1 fixed | 10 dB | ≤ 1e-5 | **0** (28 800 bits) | 2/2 |
+| 4800 | 2 fading, 2 ms, 0.5 Hz | 27 dB | ≤ 1e-3 | 0.68 | 0/2 |
+| 2400 | 2 fading, 2 ms, 1 Hz | 18 dB | ≤ 1e-5 | 0.60 | 0/2 |
+| 2400 | 2 fading, 2 ms, 5 Hz | 30 dB | ≤ 1e-3 | 0.85 | 0/2 |
+| 2400 | 2 fading, 5 ms, 1 Hz | 30 dB | ≤ 1e-5 | 0.60 | 0/2 |
+| 1200 | 2 fading, 2 ms, 1 Hz | 11 dB | ≤ 1e-5 | 0.59 | 0/2 |
+| 600 | 2 fading, 2 ms, 1 Hz | 7 dB | ≤ 1e-5 | 0.60 | 0/2 |
+| 300 | 2 fading, 5 ms, 5 Hz | 7 dB | ≤ 1e-5 | 0.58 | 0/2 |
+| 150 | 2 fading, 5 ms, 5 Hz | 5 dB | ≤ 1e-5 | 0.59 | 0/2 |
+| 75 | 2 fading, 5 ms, 5 Hz | 2 dB | ≤ 1e-5 | 0.82 | 0/2 |
+
+Two causes, both for M10:
+1. **The loss detector fragments transmissions.** A deep fade looks like the end of the signal,
+   so one transmission was reported as 3–6 "messages". With loss detection disabled, errors
+   drop (for example 300L on 2 ms / 1 Hz at 10 dB: 25–38% instead of 100%), but are still far
+   too many.
+2. **No equaliser.** A 2–5 ms delay spread smears each symbol over 5–12 neighbours. The
+   probe-aided tracker models a single complex gain, which multipath cannot be.

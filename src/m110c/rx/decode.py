@@ -78,14 +78,21 @@ class DataDecoder:
     def finish(self) -> np.ndarray:
         """End of signal: return the remaining bits.
 
-        A partial frame, or a partial interleaver block (the signal was cut off), cannot be
-        decoded and is dropped; :attr:`incomplete_symbols` says how much was lost.
+        If the signal was cut off inside an interleaver block, the missing positions are
+        filled with erasures (soft value 0, "no information") and the block is decoded anyway.
+        The code then recovers whatever the received part supports, instead of discarding up to
+        4.8 s of data. A partial frame is too short to use and is dropped.
+        :attr:`incomplete_symbols` and :attr:`incomplete_block_bits` record what was missing.
         """
         self.incomplete_symbols = self._pending.size
         self.incomplete_block_bits = self._deinterleaver.pending
-        if self._viterbi is None:
-            return np.zeros(0, dtype=np.uint8)
-        return self._viterbi.flush(terminated=False)
+        out = []
+        if self._deinterleaver.pending:
+            missing = self.mode.interleaver_bits - self._deinterleaver.pending
+            out.append(self._decode(np.zeros(missing)))
+        if self._viterbi is not None:
+            out.append(self._viterbi.flush(terminated=False))
+        return np.concatenate(out) if out else np.zeros(0, dtype=np.uint8)
 
     # -- stages ------------------------------------------------------------------------
 
