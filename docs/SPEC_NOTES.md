@@ -37,7 +37,8 @@ could be tested.
 | INT-010 75-bps exceptional sets | **Confirmed** | blind classification finds them at sets 44, 89, 134… (75S) and 359, 719 (75L) |
 | INT-011 EOM bit order | **Confirmed** | exact 32-bit EOM matches in 12 recordings |
 | INT-013 flush to end of block (interleaved) | **Confirmed** (2400S) | real signal ends after exactly the 150 frames our framer sends. 7 more recordings end on whole blocks (supporting). Zero-interleave padding not observed |
-| INT-016 bit order | **Confirmed** (LSB-first) | the recordings carry async 8N1 characters, LSB first; Wavecom documents both ASCII SYNC (8 bits LSB first, our default) and ASCII ASYNC. Framing option pending |
+| INT-016 bit order | **Confirmed** (LSB-first) | the recordings carry async 8N1 characters, LSB first; Wavecom documents both ASCII SYNC (8 bits LSB first, our default) and ASCII ASYNC |
+| INT-025 async framing (8N1 etc.) | **Confirmed** | our AsyncDecoder reads the real fox payload with zero framing errors |
 | INT-021 sideband inversion | Supported (documentation) | Wavecom's decoder has a USB/LSB polarity switch |
 | INT-019 unimplemented D1/D2 | Inconclusive | the digital-voice recording is too weak to read reliably |
 | INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
@@ -229,6 +230,23 @@ then Table X. Figure 2 places the MGD before symbol formation at every rate, and
 explicitly headed "75 bps (fixed frequency) and 1200 bps". The four Table X waveforms are
 orthogonal, so Gray coding buys nothing at 75 bps. It is applied only because the block
 diagram applies it everywhere. An RX that skipped it would swap the dibits 10 and 11.
+
+### INT-025: Asynchronous character framing option. *Interpretation, High*
+§5.3.2 carries a synchronous bit stream and says nothing about characters. Appendix A
+(A.5.1.2.8.2) defines two asynchronous options for the modem's LAN interface: **Standard mode
+(send-all)**, where start, parity and stop bits go over the air, and **Data-only mode**, where
+only data bits do (the same on air as our synchronous default). Table A-VIII allows 5–8 data
+bits, 1 or 2 stop bits and no/even/odd parity; with N < 8 data bits, the least significant N
+bits of each byte are used. The idle line is stop bits (1).
+**Decision:** `--async FORMAT` (e.g. `8N1`, `7E1`) selects send-all framing. The default stays
+synchronous (INT-016). Within a character, data bits go **least significant first**. Appendix A
+does not say this, but it is the UART convention, the decoded real recordings use it, and
+Wavecom's decoder documents it ("8 data-bits ... transmitted with the LSB first").
+**RX policy:** like a hardware UART, a character with a bad stop or parity bit is still
+delivered, and counted.
+**Tests:** frame layout, parity, short characters, round trips for all 24 Table A-VIII formats,
+chunk invariance, error counting, and decoding the real modem's fox payload with zero framing
+errors (`test_irl_fox.py`).
 
 ---
 

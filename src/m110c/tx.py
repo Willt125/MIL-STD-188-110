@@ -31,6 +31,7 @@ import numpy as np
 
 from . import bits as bitops
 from . import fec, scrambler, symbols
+from .framing import AsyncFormat, async_encode, sync_encode
 from .interleave import Interleaver
 from .spec import tables as T
 from .spec.modes import ModeSpec
@@ -158,6 +159,17 @@ def transmit(user_bits: np.ndarray, mode: ModeSpec) -> np.ndarray:
     return np.concatenate([tx.process(user_bits), tx.finish()])
 
 
-def transmit_bytes(data: bytes, mode: ModeSpec, msb_first: bool = False) -> np.ndarray:
-    """One-shot: the complete tribit stream for a message given as bytes (INT-016)."""
-    return transmit(bitops.bytes_to_bits(data, msb_first=msb_first), mode)
+def transmit_bytes(
+    data: bytes,
+    mode: ModeSpec,
+    msb_first: bool = False,
+    async_format: AsyncFormat | None = None,
+) -> np.ndarray:
+    """One-shot: the complete tribit stream for a message given as bytes.
+
+    By default bytes are sent synchronously, LSB first (INT-016). With ``async_format`` each
+    byte is sent as an asynchronous character with start/stop bits (INT-025).
+    """
+    if async_format is not None:
+        return transmit(async_encode(data, async_format), mode)
+    return transmit(sync_encode(data, msb_first=msb_first), mode)

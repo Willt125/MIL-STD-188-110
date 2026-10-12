@@ -220,13 +220,13 @@ second can otherwise be masked by a stale `.pyc`.
 Measured in [`VALIDATION.md`](VALIDATION.md); M7–M12 must meet these, not only the spec's figures:
 - **Timing drift: track at least ±0.2%** (up to +940 ppm observed in one set of captures; the
   spec's ±10 ppm is a transmitter limit).
-- **Carrier offset:** within ±20 Hz in these clips, but Wavecom's decoder allows ±400 Hz.
-  Proposed: widen the M8 acquisition target from ±75 Hz to ±400 Hz (decision pending).
+- **Carrier offset: acquire over ±400 Hz** **[DECIDED 2026-10-12]**. The clips are within
+  ±20 Hz, but Wavecom's decoder allows ±400 Hz for mistuned receivers.
 - **Sideband inversion** (USB/LSB) occurs in practice: provide `--invert-spectrum` (INT-021).
 - **Late entry** (sync on probes without a preamble) is offered by commercial decoders; it stays
   a stretch goal (S4/S5).
-- **Async 8N1 payloads** are what real modems carried. Proposed: an optional `--async 8N1` framing
-  mode for both CLIs (decision pending).
+- **Async payloads** (8N1) are what real modems carried. `--async FORMAT` framing, per Appendix A
+  send-all mode **[DECIDED 2026-10-12]**: framing in `framing.py` (done), TX CLI in M6, RX CLI in M12.
 - The recordings that decoded in the exploratory analysis become RX acceptance tests (M12),
   run only where the recordings are available locally.
 
@@ -248,7 +248,7 @@ reviewed purely against the spec. M7 onward is DSP work with judgment calls.
 | **M5** | TX framer | `tx.py`: preamble → data/probe frames → EOM → flush; tribit stream out | golden tribit vectors per mode (committed); §4.3 invariants; empty message; INT-013 end-of-transmission policy |
 | **M6** | Modulator + TX CLI | `modulate.py`, `io.py`, `m110c-tx` | constellation at symbol instants; occupied bandwidth within 300–3300 Hz; carrier = 1800 Hz ± 1 Hz; chunk invariance; memory bound. **→ v0.1: encoder complete** |
 | **M7** | Genie-aided RX | demod with *known* timing/phase/mode: matched filter, descramble, soft demap, deinterleave, de-repeat, Viterbi, EOM | bit-exact noiseless loopback, all modes; AWGN BER vs theory. This proves the back half of RX before acquisition exists |
-| **M8** | Acquisition | preamble correlator, coarse frequency estimate, timing, D1/D2 + count decode, mode auto-detect | random start offset; ±75 Hz offset; ±10 ppm clock offset (§4.2.1); noise-only false-alarm rate; back-to-back messages; INT-012 zero/short ambiguity handling |
+| **M8** | Acquisition | preamble correlator, coarse frequency estimate, timing, D1/D2 + count decode, mode auto-detect | random start offset; ±400 Hz offset and ±0.2% clock offset (§4.8); noise-only false-alarm rate; back-to-back messages; INT-012 zero/short ambiguity handling |
 | **M9** | Channel simulator | `watterson.py`, `m110c-chan` | Appendix E.7 validation tests (SNR, bandwidth, Gaussian Doppler spectrum) |
 | **M10** | Tracking + equalization | timing/carrier tracking; probe-trained DFE (LMS first for readability, RLS as an option) | 2-path static multipath; fading per Table XVI; equalizer convergence plots in the docs |
 | **M11** | 75-bps receiver | 32-symbol orthogonal-set correlation (coherent and noncoherent), exceptional-set boundary sync | Table XVI 75-bps row; acquisition without probes |

@@ -64,3 +64,13 @@ def test_payload_is_async_8n1_characters_lsb_first():
     text = uart_8n1(PAYLOAD)
     assert len(text) == 560
     assert text == (FOX * 11)[:560]
+
+
+def test_library_async_decoder_reads_the_real_modem_payload():
+    """The package's AsyncDecoder (INT-025) agrees with the independent parser above on
+    real-world data: 560 characters, no framing errors."""
+    from m110c.framing import AsyncDecoder, AsyncFormat
+
+    dec = AsyncDecoder(AsyncFormat(8, "N", 1))
+    assert dec.process(PAYLOAD) == (FOX * 11)[:560]
+    assert dec.framing_errors == 0
