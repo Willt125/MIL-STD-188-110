@@ -1,0 +1,97 @@
+"""Tests for the m110c-rx command (M8), run as real subprocesses."""
+
+import struct
+import subprocess
+import sys
+
+import numpy as np
+
+from m110c import io
+from m110c.modulate import modulate
+from m110c.spec import mode
+from m110c.tx import transmit_bytes
+
+MESSAGE = b"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789\r\n" * 3
+CLI = [sys.executable, "-m", "m110c.cli"]
+
+
+def run(args, stdin=b""):
+    return subprocess.run(args, input=stdin, capture_output=True, timeout=300)
+
+
+def test_tx_piped_into_rx_through_real_os_pipes():
+    tx = subprocess.Popen(
+        [*CLI, "-q", "-r", "600", "-i", "long"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+    )
+    rx = subprocess.Popen(
+        [*CLI, "rx"], stdin=tx.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    tx.stdout.close()  # so rx sees end of input when tx exits
+    tx.stdin.write(MESSAGE)
+    tx.stdin.close()
+    out, err = rx.communicate(timeout=300)
+    assert tx.wait(timeout=60) == 0 and rx.returncode == 0
+    assert out == MESSAGE
+    assert b"600L" in err and b"EOM found" in err
+
+
+def test_async_round_trip(tmp_path):
+    sig = tmp_path / "s.cf32"
+    assert run([*CLI, "-q", "--async", "8N1", "-o", str(sig)], MESSAGE).returncode == 0
+    out = run([*CLI, "rx", "-q", "--async", "8N1", str(sig)])
+    assert out.returncode == 0 and out.stdout == MESSAGE
+
+
+def wav_bytes(samples, rate, channels=1, extra_chunk=False):
+    """A 16-bit PCM WAV built by hand (independent of io.SampleWriter)."""
+    pcm = np.clip(np.round(samples * 32767), -32767, 32767).astype("<i2")
+    if channels == 2:
+        pcm = np.repeat(pcm, 2)
+    data = pcm.tobytes()
+    fmt = struct.pack("<HHIIHH", 1, channels, rate, rate * 2 * channels, 2 * channels, 16)
+    chunks = b"fmt " + struct.pack("<I", 16) + fmt
+    if extra_chunk:
+        chunks += b"LIST" + struct.pack("<I", 5) + b"hello" + b"\x00"  # odd size, padded
+    chunks += b"data" + struct.pack("<I", len(data)) + data
+    return b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks
+
+
+def test_wav_input_stereo_with_extra_chunks(tmp_path):
+    """Real recordings are often stereo and carry LIST chunks before the data."""
+    x = modulate(transmit_bytes(MESSAGE, mode(1200, "short")), sample_rate=48000).real
+    path = tmp_path / "rec.wav"
+    path.write_bytes(wav_bytes(np.concatenate([np.zeros(5000), x, np.zeros(5000)]), 48000, 2, True))
+    out = run([*CLI, "rx", "-f", "wav", str(path)])
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == MESSAGE
+
+
+def test_wav_written_by_m110c_tx(tmp_path):
+    path = tmp_path / "x.wav"
+    assert run([*CLI, "-q", "-f", "wav", "-r", "2400", "-o", str(path)], MESSAGE).returncode == 0
+    assert run([*CLI, "rx", "-q", "-f", "wav", str(path)]).stdout == MESSAGE
+
+
+def test_sample_rate_not_a_multiple_of_2400(tmp_path):
+    path = tmp_path / "cd.wav"
+    path.write_bytes(wav_bytes(np.zeros(1000), 44100))
+    out = run([*CLI, "rx", "-f", "wav", str(path)])
+    assert out.returncode == 2 and b"resample" in out.stderr
+
+
+def test_noise_only_reports_nothing_found():
+    noise = np.random.default_rng(0).standard_normal(9600 * 3) * 0.1
+    out = run([*CLI, "rx", "-f", "s16"], io.encode_samples(noise, "s16")[0])
+    assert out.returncode == 0 and out.stdout == b""
+    assert b"no transmission found" in out.stderr
+
+
+def test_quiet():
+    data = io.encode_samples(modulate(transmit_bytes(b"hi", mode(2400, "short"))), "cf32")[0]
+    out = run([*CLI, "rx", "-q"], data)
+    assert out.stdout == b"hi" and out.stderr == b""
+
+
+def test_not_a_wav_file():
+    out = run([*CLI, "rx", "-f", "wav"], b"definitely not RIFF")
+    assert out.returncode == 1 and b"not a WAV" in out.stderr

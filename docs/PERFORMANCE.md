@@ -39,3 +39,34 @@ the copies combined, and 0/10 using one copy.
 **Table XVI, single fixed path (AWGN) rows:** 4800 bps at 17 dB (≤ 1e-3) and 2400 bps at
 10 dB (≤ 1e-5) are both met, with zero errors in 48 000 bits. The fading rows need the channel
 simulator (M9) and an equalizer (M10).
+
+## M8: acquisition and tracking (2026-10-12)
+
+The real receiver (`rx/receiver.py`), with no genie: it finds the preamble, measures carrier
+and timing, reads the mode, then tracks. All figures are from the test suite or the scripts
+described in VALIDATION.md.
+
+**Preamble detection metric** rho (in-band, so it is the same at 9600 and 48000 S/s):
+
+| Input | rho |
+|-------|-----|
+| noise only, worst of 10 s (every position and offset bin) | 0.046 |
+| preamble at +10 / 0 / −6 / −9 dB SNR | 0.60 / 0.30 / 0.12 / 0.06 |
+| threshold | **0.08** (detects to about −7 dB) |
+
+Behind the threshold, the prefix read-back, D1/D2 and count checks reject anything else. With
+the threshold lowered to 0.03, they alone rejected all of over 100 noise candidates in 10 s.
+
+**Accuracy (clean signal):** segment timing within 0.1 sample, including fractional delays;
+carrier offset within 0.5 Hz anywhere in ±400 Hz (typically 0.02 Hz); transmitter clock offset
+learned within about 50 ppm up to ±2000 ppm.
+
+**Impairments decoded perfectly** (test suite): carrier offsets ±400 Hz; clock offsets ±0.2%;
+both together; a 3.5 Hz/s Doppler sweep (Appendix C's rate; 10 Hz/s also works, and without
+frequency tracking every mode fails at 3.5 Hz/s); 2400S at 10 dB, 1200L at 6 dB, 300S at 0 dB,
+75S at −3 dB AWGN; back-to-back messages with and without a gap; lower-sideband input with
+`--invert-spectrum`; real-valued audio; 48 kHz.
+
+**Known limits** (M10 work): cubic interpolation of the matched-filter output caps tracked SNR
+at about 35 dB (−34 dB worst-case error at the band edge). Speed: acquisition about 17× real
+time at 9600 S/s.
