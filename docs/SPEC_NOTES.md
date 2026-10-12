@@ -175,6 +175,10 @@ zero interleave, data symbols start immediately after the 0.6 s preamble.
 §5.3.2.3.9 says only that the I/Q waveforms "must be filtered". **Decision:** root-raised-cosine,
 α = 0.25 (default), giving 1800 ± 1500 Hz = 300–3300 Hz. The receiver does not need to know
 the transmitter's filter, because the equalizer absorbs the mismatch. Configurable.
+**Measured (M6):** span ±8 symbols; residual inter-symbol interference after matched filtering
+≤ 9×10⁻⁴; 99.997% of power within 300–3300 Hz; 1.9×10⁻⁵ beyond ±1550 Hz of the carrier;
+carrier at 1800.000000 Hz (spec: ±1 Hz). The exploratory analysis of the real recordings used
+this same filter at the receiver and decoded them cleanly (VALIDATION.md).
 
 ### INT-016: Byte to bit order at the user interface. *Unspecified, High*
 The synchronous serial interface carries bits, not bytes. **Decision:** LSB-first within each
