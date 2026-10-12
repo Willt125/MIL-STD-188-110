@@ -148,7 +148,7 @@ ffmpeg, then `m110c-rx -f wav --async 8N1`:
 | 1200L, 600L | plain text (`V V V DE BDA21 …`, `V V V DE BXT78 …`), EOM. The exploratory run never found 600L's EOM |
 | 2400L, 2400S, 1200S, 600S, 300S, 300L, 75S, 75L | EOM found; binary payloads as before |
 | 4800 | EOM found; text corrupts after ~25 characters (uncoded 8-PSK on a real channel needs the M10 equaliser) |
-| RadioScanner f1 (2400L, clip starts mid-preamble) | tracked to the end of the clip; "signal lost, no EOM" (the clip is cut off) |
+| RadioScanner f1 (2400L, clip starts mid-preamble) | tracked to the end of the clip; "signal lost, no EOM" (the clip is cut off). Since M9 the partial last block is decoded with erasures: 3844 bytes instead of 3087 |
 
 Measured carrier offsets were −16 to +11 Hz, and transmitter clock offsets up to about ±1400 ppm
 were tracked automatically. The reported SNRs (0.7–20 dB) are pessimistic for clips this

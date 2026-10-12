@@ -27,7 +27,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M6 Modulator and `m110c-tx` CLI | done |
 | M7 Genie-aided receiver | done |
 | M8 Acquisition, tracking and `m110c-rx` | done |
-| M9 Watterson HF channel simulator | next |
+| M9 Watterson HF channel simulator (`m110c-chan`) | done |
+| M10 Equalisation and fading-channel tracking | next |
 
 ## Transmitting
 
@@ -58,6 +59,19 @@ and stops at each end-of-message marker before searching for the next. A report 
 to stderr. Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
 resample other rates first, e.g. `sox in.wav -r 9600 out.wav`).
+
+## Simulating an HF channel
+
+```sh
+m110c-tx < message.txt | m110c-chan --preset "2 fading 2 ms 1 Hz" --snr 18 | m110c-rx
+m110c-chan --paths 2 --delay-ms 5 --doppler 5 --snr 7 --seed 3 in.cf32 -o out.cf32
+```
+
+The Watterson model of Appendix E: two equal-power paths, a delay spread apart, each with
+Rayleigh fading of the given Doppler spread, plus noise at an SNR measured in 3 kHz. Presets
+cover every Table XVI condition. Output is reproducible from `--seed`. The receiver currently
+handles fixed paths but **not yet fading ones**; that is the next milestone (see
+docs/PERFORMANCE.md).
 
 ## Development
 

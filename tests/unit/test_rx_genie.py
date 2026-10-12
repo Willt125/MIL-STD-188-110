@@ -274,3 +274,18 @@ def test_snr_estimate_tracks_the_true_snr(m):
     )
     _, rx = receive(x, m)
     assert abs(rx.snr_db - (10 + 10 * math.log10(3000 / 2400))) < 1.0
+
+
+@pytest.mark.parametrize("fraction", [0.7, 0.9])
+def test_signal_cut_off_inside_a_block_still_decodes(fraction):
+    """A partial final interleaver block is completed with erasures and decoded. Measured on
+    2400L: zero errors from 60% of the block received; below 55% the code gives up. Before
+    this, any shortfall discarded the whole block (up to 4.8 s of data)."""
+    m = mode(2400, "long")
+    msg = np.random.default_rng(10).integers(0, 2, 11000).astype(np.uint8)
+    tri = transmit(msg, m)[m.preamble_symbols :]
+    keep = int(fraction * tri.size) // m.frame_symbols * m.frame_symbols
+    dec = DataDecoder(m)
+    bits = np.concatenate([dec.process(tribits_to_phasors(tri[:keep])), dec.finish()])
+    assert dec.incomplete_block_bits > 0  # the block really was cut short
+    assert np.array_equal(bits[: msg.size], msg)
