@@ -147,12 +147,38 @@ ffmpeg, then `m110c-rx -f wav --async 8N1`:
 | 150S, 150L | fox text, perfect, EOM |
 | 1200L, 600L | plain text (`V V V DE BDA21 …`, `V V V DE BXT78 …`), EOM. The exploratory run never found 600L's EOM |
 | 2400L, 2400S, 1200S, 600S, 300S, 300L, 75S, 75L | EOM found; binary payloads as before |
-| 4800 | EOM found; text corrupts after ~25 characters (uncoded 8-PSK on a real channel needs the M10 equaliser) |
+| 4800 | EOM found; text corrupts after ~25 characters (uncoded 8-PSK on a real channel needs the M10 equaliser; M10 decodes it, below) |
 | RadioScanner f1 (2400L, clip starts mid-preamble) | tracked to the end of the clip; "signal lost, no EOM" (the clip is cut off). Since M9 the partial last block is decoded with erasures: 3844 bytes instead of 3087 |
 
 Measured carrier offsets were −16 to +11 Hz, and transmitter clock offsets up to about ±1400 ppm
 were tracked automatically. The reported SNRs (0.7–20 dB) are pessimistic for clips this
 clean; that is listed for M10.
+
+## The M10 receiver on the same recordings (2026-10-12)
+
+Same files and command; the equaliser is now the default (`--no-equalizer` gives the M8 result
+for comparison).
+
+| Recording | M8 | M10 |
+|-----------|----|-----|
+| **4800 (no interleave)** | text corrupt after ~25 characters | **the fox text, repeated, readable throughout**, EOM |
+| ARQ bursts (2400L) | garbled (`.EQT.PC.E1.XQT…`) | clean repeated `EQT` blocks, EOM |
+| fox, 150S/L, 1200L, 600L, the ALE/ryryry files | text, EOM | the same text, EOM |
+| 2400S/L, 1200S, 600S, 300S/L, 75S/L, RadioScanner f1 | EOM (binary payloads) | the same |
+| DIGI-VX | nothing found | nothing found |
+
+Two of the M8 open points are explained by this:
+
+- **Reported SNR was pessimistic** because the decoder also measured the probes of frames
+  after the signal had ended (noise), which the M8 tracker passed on before declaring loss.
+  The M10 demodulator judges loss over a second and withholds the bad units at the end, so the
+  report covers the signal: e.g. 150S 10.4 → 29.2 dB, 300L 0.7 → 13.0 dB, 2400L 5.4 → 10.9 dB.
+- **Clock-offset reports** now agree between recordings that share a capture chain: 2400S,
+  2400L and 75L give −876 to −887 ppm (the +885–938 ppm drift found above, with the sign
+  convention of `m110c-rx`), where M8 gave −838 to −1169. M8 reported +1420 ppm for 75S;
+  M10 reports −43.
+
+Processing took 0.1–0.4 s per second of recording (M8: 0.05–0.15 s).
 
 ## Limitations
 

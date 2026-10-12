@@ -8,6 +8,7 @@ The receive chain mirrors the transmitter block for block:
             -> framing  (bits -> bytes)
 
 M7 provides everything after symbol timing is known: :class:`~m110c.rx.genie.GenieReceiver`
-is told where the symbols are, what the carrier is and which mode is in use. Acquisition
-(finding those things from the signal itself) comes in M8.
+is told where the symbols are, what the carrier is and which mode is in use. M8 added
+acquisition and tracking (:mod:`.acquire`, :mod:`.track`, :mod:`.receiver`), M10 the
+multipath channel estimator and equaliser (:mod:`.equalize`).
 """

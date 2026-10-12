@@ -95,3 +95,14 @@ def test_quiet():
 def test_not_a_wav_file():
     out = run([*CLI, "rx", "-f", "wav"], b"definitely not RIFF")
     assert out.returncode == 1 and b"not a WAV" in out.stderr
+
+
+def test_no_equalizer_selects_the_m8_receiver():
+    """Same result on a clean signal; on 2 ms of multipath only the equaliser decodes."""
+    x = modulate(transmit_bytes(MESSAGE, mode(2400, "short")))
+    clean = io.encode_samples(x, "cf32")[0]
+    assert run([*CLI, "rx", "-q", "--no-equalizer"], clean).stdout == MESSAGE
+    late = np.concatenate([np.zeros(19, complex), x[:-19]])  # 2 ms at 9600 S/s
+    multipath = io.encode_samples((x + late) / np.sqrt(2), "cf32")[0]
+    assert run([*CLI, "rx", "-q"], multipath).stdout == MESSAGE
+    assert run([*CLI, "rx", "-q", "--no-equalizer"], multipath).stdout != MESSAGE

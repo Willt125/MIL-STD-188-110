@@ -11,7 +11,7 @@ from m110c.channel.awgn import add_awgn
 from m110c.channel.impairments import clock_offset, frequency_offset, frequency_sweep
 from m110c.framing import AsyncFormat
 from m110c.modulate import modulate
-from m110c.rx.receiver import Receiver
+from m110c.rx.receiver import RAW_HISTORY_SECONDS, Receiver
 from m110c.rx.track import interpolate
 from m110c.spec import all_modes, mode
 from m110c.tx import transmit_bytes
@@ -198,12 +198,16 @@ def test_output_does_not_depend_on_chunking(chunks):
 
 
 def test_raw_buffer_stays_bounded():
+    """Raw samples are kept for RAW_HISTORY_SECONDS (to resume the search where a message
+    ended), plus up to one input block; a 19-s transmission must not accumulate."""
     m = mode(2400, "long")
-    x = burst(m, bytes(range(256)) * 8)
+    x = burst(m, bytes(range(256)) * 16)
     rx = Receiver()
+    largest = 0
     for i in range(0, x.size, 4096):
         rx.process(x[i : i + 4096])
-        assert rx._raw.size < 3 * 9600  # about a second plus a search block
+        largest = max(largest, rx._raw.size)
+    assert RAW_HISTORY_SECONDS * 9600 <= largest <= RAW_HISTORY_SECONDS * 9600 + 4096
 
 
 # --- Building blocks ---------------------------------------------------------------------

@@ -30,7 +30,12 @@ from ..spec.modes import ModeSpec
 from .acquire import Detection, PreambleSearch
 from .decode import DataDecoder
 from .eom import EomDetector
+from .equalize import EqualizingDemodulator
 from .track import TrackingDemodulator
+
+# The end of a message can lie this far behind the newest sample: the demodulator holds
+# output back for a second, and judges loss over a second (equalize.LOSS_SECONDS).
+RAW_HISTORY_SECONDS = 2.5
 
 
 @dataclass
@@ -59,6 +64,7 @@ class Receiver:
         zero_interleave: bool = False,
         invert_spectrum: bool = False,
         threshold: float | None = None,
+        equalize: bool = True,
     ):
         self.sample_rate = sample_rate
         self.carrier_hz = carrier_hz
@@ -68,6 +74,7 @@ class Receiver:
         self.zero_interleave = zero_interleave
         self.invert_spectrum = invert_spectrum
         self.threshold = threshold
+        self.equalize = equalize  # False: the M8 single-gain tracker (for comparison)
         self.messages: list[Message] = []
         self._raw = np.zeros(0, dtype=complex)  # recent input
         self._raw_start = 0  # global index of _raw[0]
@@ -137,17 +144,16 @@ class Receiver:
         # Start a few samples early (interpolation needs neighbours), but never before the
         # stream itself began: the demodulator treats earlier samples as zero anyway.
         self._demod_start = max(int(np.floor(detection.segment_start)) - 8, self._raw_start)
-        self._demod = TrackingDemodulator(
-            m, detection, self.sample_rate, start_index=self._demod_start
-        )
+        demodulator = EqualizingDemodulator if self.equalize else TrackingDemodulator
+        self._demod = demodulator(m, detection, self.sample_rate, start_index=self._demod_start)
         self._decoder = DataDecoder(m)
         self._eom = EomDetector()
         self._async = AsyncDecoder(self.async_format) if self.async_format else None
         self._bit_pending = np.zeros(0, dtype=np.uint8)
 
     def _feed_message(self, samples) -> bytes:
-        symbols = self._demod.process(samples)
-        payload = self._eom.process(self._decoder.process(symbols))
+        symbols, noise_var = self._demod.process(samples)
+        payload = self._eom.process(self._decoder.process(symbols, noise_var))
         out = self._deframe(payload)
         if self._eom.found or self._demod.lost:
             out += self._end_message(final=False)
@@ -157,7 +163,7 @@ class Receiver:
         demod, decoder, eom = self._demod, self._decoder, self._eom
         out = b""
         if not demod.lost and not eom.found:
-            out += self._deframe(eom.process(decoder.process(demod.finish())))
+            out += self._deframe(eom.process(decoder.process(*demod.finish())))
         if not eom.found:
             out += self._deframe(eom.process(decoder.finish()))
             out += self._deframe(eom.finish(), final=True)
@@ -165,12 +171,26 @@ class Receiver:
         msg.eom_found = eom.found
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
         msg.snr_db = decoder.snr_db
-        # Transmitter clock offset: a fast transmitter gives a shorter symbol period here.
-        msg.clock_ppm = (demod.sps / demod.period - 1) * 1e6
-        msg.end_sample = demod.position
+        msg.clock_ppm = demod.clock_ppm
+        msg.end_sample = self._message_end(demod)
         self.messages.append(msg)
-        self._start_search(max(demod.position, self._raw_start))
+        self._start_search(max(msg.end_sample, self._raw_start))
         return out
+
+    def _message_end(self, demod) -> int:
+        """Where the transmission ended, so the search for the next one can start there.
+
+        The demodulator runs about a second ahead of the decoder (it holds output back while
+        it judges loss of signal), so its position is past the end. But the decoder only
+        gets the last block, and so the EOM, once the demodulator has seen a second of
+        whatever followed: by then it has declared the signal lost where its final run of
+        bad units began. (Computing the end from the EOM's position as well was tried; it
+        never changed a result, so it was removed.)"""
+        if demod.lost and demod.end_symbol is not None:
+            end = demod.symbol_time(demod.end_symbol)
+        else:
+            end = demod.position
+        return int(min(max(end, 0), demod.position))
 
     def _deframe(self, payload_bits: np.ndarray, final: bool = False) -> bytes:
         if self._async is not None:
@@ -201,7 +221,8 @@ class Receiver:
             margin = self._search.prefilter.size + 16
             keep_from = min(self._search._z_start, self._search._next) - margin
         else:
-            keep_from = self._samples_in - self.sample_rate  # one second, for resuming search
+            # Enough to resume the search where the message ended (see _message_end).
+            keep_from = self._samples_in - int(RAW_HISTORY_SECONDS * self.sample_rate)
         drop = max(0, min(keep_from, self._samples_in) - self._raw_start)
         self._raw = self._raw[drop:]
         self._raw_start += drop

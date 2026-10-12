@@ -38,6 +38,7 @@ class DataDecoder:
         self._frames = 0  # frames consumed (probe position within a block)
         self._sets = 0  # 75-bps sets consumed (exceptional-set position)
         self._pending = np.zeros(0, dtype=complex)  # symbols waiting for a whole frame/set
+        self._pending_var = np.zeros(0)  # their noise variances
         self._deinterleaver = Deinterleaver(mode)
         self._repeat_pending = np.zeros(0)  # soft bits waiting for a whole repeated group
         self._viterbi = fec.ViterbiDecoder(traceback_depth, start_state=0) if mode.coded else None
@@ -61,18 +62,30 @@ class DataDecoder:
             return None if self._known_signal == 0.0 else float("inf")
         return 10 * np.log10(self._known_signal / self._known_error)
 
-    def process(self, y: np.ndarray) -> np.ndarray:
-        """Accept more data-phase symbols; return decoded bits that are now settled."""
-        self._pending = np.concatenate([self._pending, np.asarray(y, dtype=complex)])
+    def process(self, y: np.ndarray, noise_var: np.ndarray | None = None) -> np.ndarray:
+        """Accept more data-phase symbols; return decoded bits that are now settled.
+
+        ``noise_var`` is the error variance of each symbol, if the demodulator knows it
+        (channel-state information). Soft bits are divided by it, so symbols received in a
+        fade carry less weight. Without it, the decoder's fixed ``noise_var`` is used.
+        """
+        y = np.asarray(y, dtype=complex)
+        var = np.full(y.size, self.noise_var) if noise_var is None else np.asarray(noise_var)
+        if var.shape != y.shape:
+            raise ValueError("one noise variance per symbol")
+        self._pending = np.concatenate([self._pending, y])
+        self._pending_var = np.concatenate([self._pending_var, var.astype(float)])
         usable = self._pending.size - self._pending.size % self.unit
         ready, self._pending = self._pending[:usable], self._pending[usable:]
+        ready_var, self._pending_var = self._pending_var[:usable], self._pending_var[usable:]
         if ready.size == 0:
             return np.zeros(0, dtype=np.uint8)
         y_clean = demap.descramble(ready, scrambler.data_sequence(self._symbols_in, ready.size))
         self._symbols_in += ready.size
-        soft = (
-            self._soft_bits_75(y_clean) if self.mode.is_75bps else self._soft_bits_framed(y_clean)
-        )
+        if self.mode.is_75bps:
+            soft = self._soft_bits_75(y_clean, ready_var)
+        else:
+            soft = self._soft_bits_framed(y_clean, ready_var)
         return self._decode(soft)
 
     def finish(self) -> np.ndarray:
@@ -96,12 +109,14 @@ class DataDecoder:
 
     # -- stages ------------------------------------------------------------------------
 
-    def _soft_bits_framed(self, y: np.ndarray) -> np.ndarray:
+    def _soft_bits_framed(self, y: np.ndarray, var: np.ndarray) -> np.ndarray:
+        unknown = self.mode.unknown_per_frame
         frames = y.reshape(-1, self.mode.frame_symbols)
-        data = frames[:, : self.mode.unknown_per_frame].reshape(-1)
-        for probe in frames[:, self.mode.unknown_per_frame :]:
+        data = frames[:, :unknown].reshape(-1)
+        data_var = var.reshape(-1, self.mode.frame_symbols)[:, :unknown].reshape(-1)
+        for probe in frames[:, unknown:]:
             self._measure_probe(probe)
-        return demap.soft_bits(data, self.mode.bits_per_channel_symbol, self.noise_var)
+        return demap.soft_bits(data, self.mode.bits_per_channel_symbol, data_var)
 
     def _measure_probe(self, probe: np.ndarray) -> None:
         position = self._frames % self.mode.frames_per_block
@@ -112,14 +127,15 @@ class DataDecoder:
         self._known_error += float(np.sum(np.abs(probe - known) ** 2))
         self._frames += 1
 
-    def _soft_bits_75(self, y: np.ndarray) -> np.ndarray:
+    def _soft_bits_75(self, y: np.ndarray, var: np.ndarray) -> np.ndarray:
         corr = demap.set_correlations(y, self.mode, self._sets)
         decided = demap.set_patterns(self.mode, self._sets, np.argmax(corr, axis=1))
         sets = y.reshape(decided.shape)
         self._known_signal += float(np.sum(np.abs(decided) ** 2))
         self._known_error += float(np.sum(np.abs(sets - decided) ** 2))
         self._sets += len(corr)
-        return demap.soft_bits_75(corr, self.noise_var)
+        set_var = var.reshape(-1, T.TRIBITS_PER_75BPS_SET).mean(axis=1)
+        return demap.soft_bits_75(corr, set_var)
 
     def _decode(self, soft: np.ndarray) -> np.ndarray:
         soft = self._deinterleaver.process(soft)

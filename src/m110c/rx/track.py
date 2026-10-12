@@ -34,7 +34,12 @@ How it works
     is held back by that many units, so noise after a vanished signal is never decoded.
 
 Output: normalised data-phase symbols (on the unit circle when noiseless), in the form
-:class:`~m110c.rx.decode.DataDecoder` expects, including probes.
+:class:`~m110c.rx.decode.DataDecoder` expects, including probes, and the noise variance of
+each (1/SNR of its unit).
+
+Since M10 the receiver uses :class:`~m110c.rx.equalize.EqualizingDemodulator`; this simpler
+one models the channel as a single gain and remains available for comparison
+(``m110c-rx --no-equalizer``).
 """
 
 from collections import deque
@@ -88,6 +93,7 @@ class TrackingDemodulator:
         self.kp, self.ki, self.kf = kp, ki, kf
         self.taps = rrc_taps(self.sps, rolloff)
         delay = (self.taps.size - 1) // 2
+        self._delay = delay
         # Matched-filter state. u[n] (global n) uses mixed inputs n - L + 1 .. n.
         self._history = np.zeros(self.taps.size - 1, dtype=complex)
         self._samples_in = start_index
@@ -103,6 +109,8 @@ class TrackingDemodulator:
         self._smoothed_gain = None  # 75 bps: gain learned from previous sets
         # What comes next: the rest of the preamble (known), then the data phase.
         remaining = detection.data_start_symbol
+        self.n_train = remaining
+        self.end_symbol = None  # loss is declared after only LOSS_UNITS: use the position
         pre = symbols.preamble_tribits(mode)[-remaining:]
         self._training = np.exp(
             1j * np.pi / 4 * scrambler.scramble(pre, scrambler.sync_sequence(0, pre.size))
@@ -123,13 +131,24 @@ class TrackingDemodulator:
     def in_data_phase(self) -> bool:
         return self._training_done >= self._training.size
 
+    def symbol_time(self, k: float) -> float:
+        """Sample index at which symbol k (0 = the detected segment's first symbol) starts."""
+        next_symbol = self._training_done + self._data_symbols
+        return self.t_next + (k - next_symbol) * self.period - 2 * self._delay
+
+    @property
+    def clock_ppm(self) -> float:
+        """Transmitter clock offset: a fast transmitter gives a shorter symbol period here."""
+        return (self.sps / self.period - 1) * 1e6
+
     @property
     def position(self) -> int:
         """Global sample index the demodulator has reached (for resuming a search)."""
         return int(self.t_next)
 
-    def process(self, samples: np.ndarray) -> np.ndarray:
-        """Accept raw samples; return normalised data-phase symbols that are settled."""
+    def process(self, samples: np.ndarray):
+        """Accept raw samples; return the normalised data-phase symbols that are settled,
+        and the noise variance of each (``(symbols, noise_var)``)."""
         self._filter(np.asarray(samples))
         out = []
         while not self.lost:
@@ -138,15 +157,15 @@ class TrackingDemodulator:
             if needed >= self._u_start + self._u.size:
                 break
             produced = self._unit(unit)
-            if produced is not None:
+            if produced is not None and produced[0].size:
                 out.append(produced)
             self._trim()
-        return np.concatenate(out) if out else np.zeros(0, dtype=complex)
+        return _join(out)
 
-    def finish(self) -> np.ndarray:
+    def finish(self):
         """End of input: release the held-back symbols, except trailing bad units."""
         out = self._release_good()
-        return out if out is not None else np.zeros(0, dtype=complex)
+        return _join([out] if out is not None else [])
 
     # -- matched filter ---------------------------------------------------------------
 
@@ -206,7 +225,7 @@ class TrackingDemodulator:
             self.t_next = times[-1] + self.period
             if training:
                 return self._hold(None, bad=True)
-            return self._hold(self._advance_counters(y), bad=True)
+            return self._hold((self._advance_counters(y), np.full(n, 1e6)), bad=True)
         snr = 10 * np.log10(signal_energy / max(noise_energy, 1e-30))
         self.unit_snr_db.append(float(snr))
 
@@ -232,7 +251,12 @@ class TrackingDemodulator:
 
         previous = self.gain
         self.gain = gain
-        output = None if training else self._normalise(y, gain, previous)
+        # The normalised symbols' noise variance is 1/SNR (unit-power symbols).
+        output = (
+            None
+            if training
+            else (self._normalise(y, gain, previous), np.full(n, 10 ** (-snr / 10)))
+        )
         return self._hold(output, bad=snr < LOSS_SNR_DB)
 
     # -- data-phase helpers -----------------------------------------------------------
@@ -304,4 +328,11 @@ class TrackingDemodulator:
         self._held.clear()
         while units and units[-1][1]:
             units.pop()
-        return np.concatenate([u for u, _ in units]) if units else None
+        return _join([u for u, _ in units]) if units else None
+
+
+def _join(parts):
+    """Concatenate (symbols, noise_var) pairs."""
+    if not parts:
+        return np.zeros(0, dtype=complex), np.zeros(0)
+    return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])

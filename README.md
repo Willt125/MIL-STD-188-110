@@ -28,7 +28,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M7 Genie-aided receiver | done |
 | M8 Acquisition, tracking and `m110c-rx` | done |
 | M9 Watterson HF channel simulator (`m110c-chan`) | done |
-| M10 Equalisation and fading-channel tracking | next |
+| M10 Equalisation and fading-channel tracking | done |
+| M11 75-bps refinements, acquisition in fades | next |
 
 ## Transmitting
 
@@ -54,11 +55,13 @@ m110c-rx --format wav --async 8N1 recording.wav                    # e.g. a real
 ```
 
 The receiver finds each transmission by itself: it searches ±400 Hz around the 1800-Hz
-carrier, reads the mode from the preamble, tracks timing (±0.2% clock error), carrier and gain,
-and stops at each end-of-message marker before searching for the next. A report per message goes
-to stderr. Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
+carrier, reads the mode from the preamble, follows timing (±0.2% clock error) and carrier,
+estimates the multipath channel at every probe and equalises it, and stops at each
+end-of-message marker before searching for the next. A report per message goes to stderr.
+Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
-resample other rates first, e.g. `sox in.wav -r 9600 out.wav`).
+resample other rates first, e.g. `sox in.wav -r 9600 out.wav`), `--no-equalizer` (the simpler
+single-gain tracker of M8, for comparison).
 
 ## Simulating an HF channel
 
@@ -69,9 +72,8 @@ m110c-chan --paths 2 --delay-ms 5 --doppler 5 --snr 7 --seed 3 in.cf32 -o out.cf
 
 The Watterson model of Appendix E: two equal-power paths, a delay spread apart, each with
 Rayleigh fading of the given Doppler spread, plus noise at an SNR measured in 3 kHz. Presets
-cover every Table XVI condition. Output is reproducible from `--seed`. The receiver currently
-handles fixed paths but **not yet fading ones**; that is the next milestone (see
-docs/PERFORMANCE.md).
+cover every Table XVI condition. Output is reproducible from `--seed`. The receiver meets every
+Table XVI condition in the simulated runs recorded in docs/PERFORMANCE.md.
 
 ## Development
 
