@@ -18,7 +18,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M2 FEC encoder and Viterbi decoder | done |
 | M3 Interleaver | done |
 | M4 MGD, scramblers, symbol formation | done |
-| M5 Transmit framer | next |
+| M5 Transmit framer (+ golden vectors) | done |
+| M6 Modulator and `m110c-tx` CLI | next |
 
 ## Development
 

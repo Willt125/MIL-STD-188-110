@@ -71,6 +71,8 @@ the first block starting right after the preamble) carry D1 and then D2. All oth
 symbols are 0. The first block has no D1/D2 in front of it, because the preamble precedes it.
 The final block of a transmission still carries them, for uniformity. The RX must not
 *require* them on the final block.
+**Tests:** every probe of a transmission spanning more than two blocks is checked against this
+rule, including the final block.
 
 ### INT-006: D1/D2 probe contents. *Interpretation, High*
 **Decision:** each D value is used as a 3-bit channel symbol and mapped through Table XIII, but
@@ -125,6 +127,14 @@ metrics.
   does not say how to end a partial frame.
 - 4800 bps: there is no coder, but the spec still implies a flush phase. **Decision:** send
   EOM, then 144 zero bits uncoded, then pad to the frame boundary.
+- Why padding with zero *channel* bits is safe: after 144 zero input bits the encoder is back in
+  state 0, where zero input produces zero output. So zero channel bits are exactly what
+  continued zero input would produce. This matters at 150 bps with zero interleave: a 20-bit
+  frame holds 2.5 input bits' worth of coded bits, so the last frame can end mid-way through a
+  repeated pair. With an interleaver, padding to the block end is always a whole number of input
+  bits for every Table VI size (asserted in `tx.py`).
+**Tests:** an independent length formula for every mode and message length (0, 1, 37 and 400
+bytes); messages that overflow a block by exactly one bit; flush bits decode as zero.
 
 ### INT-014: Start of data phase in an offline encoder. *Unspecified, High*
 The real-time narrative (load during the preamble) is equivalent to: preamble, then block 1,
