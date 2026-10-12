@@ -6,6 +6,8 @@ serial-tone waveform (§5.3.2: 75–4800 bps, zero/short/long interleave). It pr
 baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via files or pipes.
 
 - [`docs/PLAN.md`](docs/PLAN.md): scope, architecture, testing strategy and milestones.
+- [`docs/VALIDATION.md`](docs/VALIDATION.md): the transmit chain checked against real 188-110A
+  recordings. Our transmitter reproduces a fielded modem's output symbol for symbol.
 - [`docs/SPEC_NOTES.md`](docs/SPEC_NOTES.md): every ambiguity or error in the spec, and how
   this implementation reads it. Code and tests refer to these entries as `INT-nnn`.
 
@@ -19,6 +21,7 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M3 Interleaver | done |
 | M4 MGD, scramblers, symbol formation | done |
 | M5 Transmit framer (+ golden vectors) | done |
+| External validation of M1–M5 vs real recordings | done |
 | M6 Modulator and `m110c-tx` CLI | next |
 
 ## Development

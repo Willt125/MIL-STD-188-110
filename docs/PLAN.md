@@ -200,7 +200,7 @@ production version must match it exactly over randomized inputs:
   fading paths, Doppler spectrum shape). Then Table XVI is checked row by row. The output is a
   generated conformance report (a markdown table) committed with each release.
 
-### 4.6 External validation (opportunistic)
+### 4.6 External validation (done for TX, 2026-10-12; see [`VALIDATION.md`](VALIDATION.md))
 The serial-tone waveform has not changed since 188-110A, so any real-world recording of a
 110A/B/C serial-tone transmission is a valid test input. Public signal-identification archives
 host such samples. Decoding one successfully, and getting a sensible D1/D2 and EOM, is the
@@ -215,6 +215,15 @@ nothing cross-checked: Table VI 75S rows/columns, the sync scrambler sequence, t
 LFSR taps. That led to the "double entry" tests and the separately-transcribed row moduli.
 Note: run mutants with `PYTHONDONTWRITEBYTECODE=1`. A same-size edit made within the same
 second can otherwise be masked by a stale `.pyc`.
+
+### 4.8 Receiver design inputs from real recordings
+Measured in [`VALIDATION.md`](VALIDATION.md); M7–M12 must meet these, not only the spec's figures:
+- **Timing drift up to ±0.5%** (≈ +3500 ppm observed; the spec's ±10 ppm is a transmitter limit).
+- **Carrier offset** within ±20 Hz observed; keep the ±75 Hz acquisition target.
+- **Async 8N1 payloads** are what real modems carried. Proposed: an optional `--async 8N1` framing
+  mode for both CLIs (decision pending).
+- The recordings that decoded in the exploratory analysis become RX acceptance tests (M12),
+  run only where the recordings are available locally.
 
 ---
 
