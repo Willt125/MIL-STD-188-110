@@ -16,6 +16,36 @@ validation against real recordings (PLAN §4.6).
 
 All paragraph and table numbers refer to the main body (§5.3.2) unless noted otherwise.
 
+## Validation status (real recordings, 2026-10-12)
+
+Twenty real-world 188-110A recordings, plus a decoder vendor's documentation, were analysed against this register (method and per-file
+results in [`VALIDATION.md`](VALIDATION.md)). In the table, **Confirmed** means the
+interpretation was observed in real transmissions, and the obvious alternative failed where it
+could be tested.
+
+| Entry | Status | Evidence |
+|-------|--------|----------|
+| INT-001 count encoding (text, not Table XII) | **Confirmed** | 2400L/75L preambles count 23…0 cleanly by the text rule (by Table XII: 43, 41, 42…); again in an independent RadioScanner.ru recording |
+| INT-002 encoder register orientation | **Confirmed** | fox decodes; our TX matches the real modem; the time-reversed taps do not |
+| INT-003 data scrambler (Figure 6) | **Confirmed** | probes descramble to 0 (coherence 0.99 vs 0.32 control); the mirror-image taps do not match |
+| INT-004 scrambler continuous through probes | **Confirmed** | same evidence |
+| INT-005 D1/D2 in the last two probes of each block, final block included | **Confirmed** | 2400S, 4800, 1200 recordings; our TX matches the final block |
+| INT-006 D pattern contents; 1440-symbol period at 4800/zero | **Confirmed** | 4800 recording carries D1/D2 every 30 frames |
+| INT-007 interleaver (incl. 75-bps step 7) | **Confirmed** | text decoded at 150S/L, 600L, 1200L; 75S EOM |
+| INT-008 repetition in pairs | **Confirmed** | 150S/L decode the fox text; 300S/L EOM found |
+| INT-009 first fetched bit = MSB | **Confirmed** | our TX matches; the LSB reading does not |
+| INT-010 75-bps exceptional sets | **Confirmed** | blind classification finds them at sets 44, 89, 134… (75S) and 359, 719 (75L) |
+| INT-011 EOM bit order | **Confirmed** | exact 32-bit EOM matches in 12 recordings |
+| INT-013 flush to end of block (interleaved) | **Confirmed** (2400S) | real signal ends after exactly the 150 frames our framer sends. 7 more recordings end on whole blocks (supporting). Zero-interleave padding not observed |
+| INT-016 bit order | **Confirmed** (LSB-first) | the recordings carry async 8N1 characters, LSB first; Wavecom documents both ASCII SYNC (8 bits LSB first, our default) and ASCII ASYNC |
+| INT-025 async framing (8N1 etc.) | **Confirmed** | our AsyncDecoder reads the real fox payload with zero framing errors |
+| INT-021 sideband inversion | Supported (documentation) | Wavecom's decoder has a USB/LSB polarity switch |
+| INT-019 unimplemented D1/D2 | Inconclusive | the digital-voice recording is too weak to read reliably |
+| INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
+| INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
+| Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
+| INT-012, 014, 015, 017, 018, 022, 023 | n/a | implementer choices; recordings cannot confirm or refute them |
+
 ---
 
 ### INT-001: Table XII contradicts its own text (count-symbol mapping). *Errata, High*
@@ -71,6 +101,8 @@ the first block starting right after the preamble) carry D1 and then D2. All oth
 symbols are 0. The first block has no D1/D2 in front of it, because the preamble precedes it.
 The final block of a transmission still carries them, for uniformity. The RX must not
 *require* them on the final block.
+**Tests:** every probe of a transmission spanning more than two blocks is checked against this
+rule, including the final block.
 
 ### INT-006: D1/D2 probe contents. *Interpretation, High*
 **Decision:** each D value is used as a 3-bit channel symbol and mapped through Table XIII, but
@@ -125,6 +157,14 @@ metrics.
   does not say how to end a partial frame.
 - 4800 bps: there is no coder, but the spec still implies a flush phase. **Decision:** send
   EOM, then 144 zero bits uncoded, then pad to the frame boundary.
+- Why padding with zero *channel* bits is safe: after 144 zero input bits the encoder is back in
+  state 0, where zero input produces zero output. So zero channel bits are exactly what
+  continued zero input would produce. This matters at 150 bps with zero interleave: a 20-bit
+  frame holds 2.5 input bits' worth of coded bits, so the last frame can end mid-way through a
+  repeated pair. With an interleaver, padding to the block end is always a whole number of input
+  bits for every Table VI size (asserted in `tx.py`).
+**Tests:** an independent length formula for every mode and message length (0, 1, 37 and 400
+bytes); messages that overflow a block by exactly one bit; flush bits decode as zero.
 
 ### INT-014: Start of data phase in an offline encoder. *Unspecified, High*
 The real-time narrative (load during the preamble) is equivalent to: preamble, then block 1,
@@ -135,6 +175,10 @@ zero interleave, data symbols start immediately after the 0.6 s preamble.
 §5.3.2.3.9 says only that the I/Q waveforms "must be filtered". **Decision:** root-raised-cosine,
 α = 0.25 (default), giving 1800 ± 1500 Hz = 300–3300 Hz. The receiver does not need to know
 the transmitter's filter, because the equalizer absorbs the mismatch. Configurable.
+**Measured (M6):** span ±8 symbols; residual inter-symbol interference after matched filtering
+≤ 9×10⁻⁴; 99.997% of power within 300–3300 Hz; 1.9×10⁻⁵ beyond ±1550 Hz of the carrier;
+carrier at 1800.000000 Hz (spec: ±1 Hz). The exploratory analysis of the real recordings used
+this same filter at the receiver and decoded them cleanly (VALIDATION.md).
 
 ### INT-016: Byte to bit order at the user interface. *Unspecified, High*
 The synchronous serial interface carries bits, not bytes. **Decision:** LSB-first within each
@@ -190,6 +234,23 @@ then Table X. Figure 2 places the MGD before symbol formation at every rate, and
 explicitly headed "75 bps (fixed frequency) and 1200 bps". The four Table X waveforms are
 orthogonal, so Gray coding buys nothing at 75 bps. It is applied only because the block
 diagram applies it everywhere. An RX that skipped it would swap the dibits 10 and 11.
+
+### INT-025: Asynchronous character framing option. *Interpretation, High*
+§5.3.2 carries a synchronous bit stream and says nothing about characters. Appendix A
+(A.5.1.2.8.2) defines two asynchronous options for the modem's LAN interface: **Standard mode
+(send-all)**, where start, parity and stop bits go over the air, and **Data-only mode**, where
+only data bits do (the same on air as our synchronous default). Table A-VIII allows 5–8 data
+bits, 1 or 2 stop bits and no/even/odd parity; with N < 8 data bits, the least significant N
+bits of each byte are used. The idle line is stop bits (1).
+**Decision:** `--async FORMAT` (e.g. `8N1`, `7E1`) selects send-all framing. The default stays
+synchronous (INT-016). Within a character, data bits go **least significant first**. Appendix A
+does not say this, but it is the UART convention, the decoded real recordings use it, and
+Wavecom's decoder documents it ("8 data-bits ... transmitted with the LSB first").
+**RX policy:** like a hardware UART, a character with a bad stop or parity bit is still
+delivered, and counted.
+**Tests:** frame layout, parity, short characters, round trips for all 24 Table A-VIII formats,
+chunk invariance, error counting, and decoding the real modem's fox payload with zero framing
+errors (`test_irl_fox.py`).
 
 ---
 

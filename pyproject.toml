@@ -11,6 +11,9 @@ license = "MIT"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 
+[project.scripts]
+m110c-tx = "m110c.cli:main_tx"
+
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6"]
 dev = ["pytest>=7", "hypothesis>=6", "ruff"]

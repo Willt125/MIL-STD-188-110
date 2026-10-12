@@ -200,7 +200,7 @@ production version must match it exactly over randomized inputs:
   fading paths, Doppler spectrum shape). Then Table XVI is checked row by row. The output is a
   generated conformance report (a markdown table) committed with each release.
 
-### 4.6 External validation (opportunistic)
+### 4.6 External validation (done for TX, 2026-10-12; see [`VALIDATION.md`](VALIDATION.md))
 The serial-tone waveform has not changed since 188-110A, so any real-world recording of a
 110A/B/C serial-tone transmission is a valid test input. Public signal-identification archives
 host such samples. Decoding one successfully, and getting a sensible D1/D2 and EOM, is the
@@ -215,6 +215,20 @@ nothing cross-checked: Table VI 75S rows/columns, the sync scrambler sequence, t
 LFSR taps. That led to the "double entry" tests and the separately-transcribed row moduli.
 Note: run mutants with `PYTHONDONTWRITEBYTECODE=1`. A same-size edit made within the same
 second can otherwise be masked by a stale `.pyc`.
+
+### 4.8 Receiver design inputs from real recordings
+Measured in [`VALIDATION.md`](VALIDATION.md); M7–M12 must meet these, not only the spec's figures:
+- **Timing drift: track at least ±0.2%** (up to +940 ppm observed in one set of captures; the
+  spec's ±10 ppm is a transmitter limit).
+- **Carrier offset: acquire over ±400 Hz** **[DECIDED 2026-10-12]**. The clips are within
+  ±20 Hz, but Wavecom's decoder allows ±400 Hz for mistuned receivers.
+- **Sideband inversion** (USB/LSB) occurs in practice: provide `--invert-spectrum` (INT-021).
+- **Late entry** (sync on probes without a preamble) is offered by commercial decoders; it stays
+  a stretch goal (S4/S5).
+- **Async payloads** (8N1) are what real modems carried. `--async FORMAT` framing, per Appendix A
+  send-all mode **[DECIDED 2026-10-12]**: framing in `framing.py` (done), TX CLI in M6, RX CLI in M12.
+- The recordings that decoded in the exploratory analysis become RX acceptance tests (M12),
+  run only where the recordings are available locally.
 
 ---
 
@@ -234,7 +248,7 @@ reviewed purely against the spec. M7 onward is DSP work with judgment calls.
 | **M5** | TX framer | `tx.py`: preamble → data/probe frames → EOM → flush; tribit stream out | golden tribit vectors per mode (committed); §4.3 invariants; empty message; INT-013 end-of-transmission policy |
 | **M6** | Modulator + TX CLI | `modulate.py`, `io.py`, `m110c-tx` | constellation at symbol instants; occupied bandwidth within 300–3300 Hz; carrier = 1800 Hz ± 1 Hz; chunk invariance; memory bound. **→ v0.1: encoder complete** |
 | **M7** | Genie-aided RX | demod with *known* timing/phase/mode: matched filter, descramble, soft demap, deinterleave, de-repeat, Viterbi, EOM | bit-exact noiseless loopback, all modes; AWGN BER vs theory. This proves the back half of RX before acquisition exists |
-| **M8** | Acquisition | preamble correlator, coarse frequency estimate, timing, D1/D2 + count decode, mode auto-detect | random start offset; ±75 Hz offset; ±10 ppm clock offset (§4.2.1); noise-only false-alarm rate; back-to-back messages; INT-012 zero/short ambiguity handling |
+| **M8** | Acquisition | preamble correlator, coarse frequency estimate, timing, D1/D2 + count decode, mode auto-detect | random start offset; ±400 Hz offset and ±0.2% clock offset (§4.8); noise-only false-alarm rate; back-to-back messages; INT-012 zero/short ambiguity handling |
 | **M9** | Channel simulator | `watterson.py`, `m110c-chan` | Appendix E.7 validation tests (SNR, bandwidth, Gaussian Doppler spectrum) |
 | **M10** | Tracking + equalization | timing/carrier tracking; probe-trained DFE (LMS first for readability, RLS as an option) | 2-path static multipath; fading per Table XVI; equalizer convergence plots in the docs |
 | **M11** | 75-bps receiver | 32-symbol orthogonal-set correlation (coherent and noncoherent), exceptional-set boundary sync | Table XVI 75-bps row; acquisition without probes |

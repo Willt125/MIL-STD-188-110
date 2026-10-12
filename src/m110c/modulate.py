@@ -1,0 +1,133 @@
+"""8-PSK modulator (§5.3.2.3.9): tribit numbers -> complex samples.
+
+Each tribit k becomes a unit phasor at 45k degrees (Figure 5; INT-021 for the rotation sense).
+The phasors are pulse-shaped with a root-raised-cosine filter and placed on the carrier:
+
+    x[n] = A * sum_k  e^{j*pi*k_sym/4} * h[n - k*sps]  *  e^{j*2*pi*f_c*n/f_s}
+
+* ``sps`` = samples per symbol = sample rate / 2400, which must be a whole number.
+* ``h``  = root-raised cosine, roll-off 0.25, spanning +/-8 symbols (INT-015). The spec only
+  says the waveforms "must be filtered" (§5.3.2.3.9 note). Roll-off 0.25 puts the signal in
+  1800 +/- 1500 Hz = 300..3300 Hz, the 3-kHz HF voice channel.
+* ``f_c`` = 1800 Hz by default, so the real part of ``x`` *is* the audio waveform an SSB
+  (upper sideband) transmitter would be fed. With ``carrier_hz=0`` the output is complex
+  baseband centred on the carrier.
+
+Streaming and determinism
+    :meth:`Modulator.process` takes any number of tribits and returns the samples that are
+    final. Internally, tribits are filtered in fixed blocks of 240 symbols (0.1 s), so the
+    floating-point arithmetic, and therefore every output bit, is identical however the
+    input was chunked. :meth:`Modulator.flush` returns the rest, including the filter's
+    decaying tail.
+"""
+
+import numpy as np
+
+from .spec import tables as T
+
+BLOCK_SYMBOLS = 240  # 0.1 s; fixed so that output does not depend on input chunking
+
+
+def rrc_taps(sps: int, alpha: float = 0.25, span: int = 8) -> np.ndarray:
+    """Root-raised-cosine impulse response, ``2*span*sps + 1`` taps, unit energy.
+
+    Standard closed form, with the two removable singularities (t = 0 and
+    |t| = 1/(4*alpha) symbol periods) filled in by their limits.
+    """
+    if not 0 < alpha <= 1:
+        raise ValueError("roll-off must be in (0, 1]")
+    t = np.arange(-span * sps, span * sps + 1) / sps  # in symbol periods
+    h = np.empty_like(t)
+    for i, ti in enumerate(t):
+        if abs(ti) < 1e-12:
+            h[i] = 1 - alpha + 4 * alpha / np.pi
+        elif abs(abs(4 * alpha * ti) - 1) < 1e-9:
+            h[i] = (alpha / np.sqrt(2)) * (
+                (1 + 2 / np.pi) * np.sin(np.pi / (4 * alpha))
+                + (1 - 2 / np.pi) * np.cos(np.pi / (4 * alpha))
+            )
+        else:
+            num = np.sin(np.pi * ti * (1 - alpha)) + 4 * alpha * ti * np.cos(
+                np.pi * ti * (1 + alpha)
+            )
+            h[i] = num / (np.pi * ti * (1 - (4 * alpha * ti) ** 2))
+    return h / np.sqrt(np.sum(h**2))
+
+
+def tribits_to_phasors(tribits: np.ndarray) -> np.ndarray:
+    """§5.3.2.3.9 a: tribit k -> phase k * 45 degrees."""
+    return np.exp(1j * np.deg2rad(T.DEGREES_PER_TRIBIT) * np.asarray(tribits, dtype=float))
+
+
+class Modulator:
+    """Streaming pulse-shaping 8-PSK modulator."""
+
+    def __init__(
+        self,
+        sample_rate: int = 9600,
+        carrier_hz: float = T.CARRIER_HZ,
+        rolloff: float = 0.25,
+        span: int = 8,
+        rms: float = 0.4,
+    ):
+        if sample_rate % T.SYMBOL_RATE:
+            raise ValueError(f"sample rate must be a multiple of {T.SYMBOL_RATE} Hz")
+        self.sample_rate = sample_rate
+        self.sps = sample_rate // T.SYMBOL_RATE
+        self.carrier_hz = carrier_hz
+        self.taps = rrc_taps(self.sps, rolloff, span)
+        # Unit-energy taps spread each symbol's energy over sps samples, so a symbol
+        # amplitude of rms*sqrt(sps) gives the requested RMS level of the complex envelope.
+        self._amplitude = rms * np.sqrt(self.sps)
+        self._pending = np.zeros(0, dtype=np.uint8)  # tribits awaiting a full block
+        self._tail = np.zeros(self.taps.size - 1, dtype=complex)  # filter overlap
+        self._samples_out = 0  # global sample index, for a continuous carrier phase
+
+    @property
+    def delay(self) -> int:
+        """Samples from a symbol's start to the peak of its pulse (filter group delay)."""
+        return (self.taps.size - 1) // 2
+
+    def process(self, tribits: np.ndarray) -> np.ndarray:
+        """Accept tribits; return every sample that is now final."""
+        self._pending = np.concatenate([self._pending, np.asarray(tribits, dtype=np.uint8)])
+        n_blocks = self._pending.size // BLOCK_SYMBOLS
+        out = [
+            self._block(self._pending[i * BLOCK_SYMBOLS : (i + 1) * BLOCK_SYMBOLS])
+            for i in range(n_blocks)
+        ]
+        self._pending = self._pending[n_blocks * BLOCK_SYMBOLS :]
+        return np.concatenate(out) if out else np.zeros(0, dtype=complex)
+
+    def flush(self) -> np.ndarray:
+        """Remaining samples: the last partial block plus the filter tail."""
+        out = [self._block(self._pending)] if self._pending.size else []
+        self._pending = np.zeros(0, dtype=np.uint8)
+        out.append(self._mix(self._tail))
+        self._tail = np.zeros(self.taps.size - 1, dtype=complex)
+        return np.concatenate(out)
+
+    def _block(self, tribits: np.ndarray) -> np.ndarray:
+        """Filter one block by overlap-add and put it on the carrier."""
+        impulses = np.zeros(tribits.size * self.sps, dtype=complex)
+        impulses[:: self.sps] = self._amplitude * tribits_to_phasors(tribits)
+        shaped = np.convolve(impulses, self.taps)
+        shaped[: self._tail.size] += self._tail
+        self._tail = shaped[impulses.size :].copy()
+        return self._mix(shaped[: impulses.size])
+
+    def _mix(self, baseband: np.ndarray) -> np.ndarray:
+        n = self._samples_out + np.arange(baseband.size)
+        self._samples_out += baseband.size
+        if self.carrier_hz == 0:
+            return baseband
+        # Reduce the phase modulo one cycle *before* scaling by 2*pi, so the carrier stays
+        # accurate however long the stream runs.
+        cycles = np.mod(self.carrier_hz * n, self.sample_rate) / self.sample_rate
+        return baseband * np.exp(2j * np.pi * cycles)
+
+
+def modulate(tribits: np.ndarray, **kwargs) -> np.ndarray:
+    """One-shot: all samples for a tribit stream, including the filter tail."""
+    mod = Modulator(**kwargs)
+    return np.concatenate([mod.process(tribits), mod.flush()])
