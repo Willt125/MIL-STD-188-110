@@ -249,10 +249,10 @@ reviewed purely against the spec. M7 onward is DSP work with judgment calls.
 | **M6** | Modulator + TX CLI | `modulate.py`, `io.py`, `m110c-tx` | constellation at symbol instants; occupied bandwidth within 300–3300 Hz; carrier = 1800 Hz ± 1 Hz; chunk invariance; memory bound. **→ v0.1: encoder complete** |
 | **M7** | Genie-aided RX | demod with *known* timing/phase/mode: matched filter, descramble, soft demap, deinterleave, de-repeat, Viterbi, EOM | bit-exact noiseless loopback, all modes; AWGN BER vs theory. This proves the back half of RX before acquisition exists |
 | **M8** | Acquisition **and minimal tracking** (scope widened 2026-10-12: ±0.2% clock drift cannot be decoded without it) | preamble search over ±400 Hz; timing, carrier, D1/D2/count; probe-aided (and 75-bps decision-directed) gain/phase/frequency/timing tracking; signal-loss detection; `m110c-rx` | random start offset, fractional timing; ±400 Hz offset and ±0.2% clock offset (§4.8); 3.5 Hz/s Doppler sweep; noise-only false alarms (and checks behind the threshold); back-to-back messages; INT-012/019/021 options. **Done** |
-| **M9** | Channel simulator | `watterson.py`, `m110c-chan` | Appendix E.7 validation tests (SNR, bandwidth, Gaussian Doppler spectrum). **Done**: all E.7 checks met; Table XVI baseline recorded in PERFORMANCE.md |
+| **M9** | Channel simulator | `watterson.py`, `m110c-chan` | Appendix E.7 validation tests (SNR, bandwidth, Gaussian Doppler spectrum). **Done**: all E.7 checks met; Table XVI baseline recorded in PERFORMANCE.md. Cross-checked against PathSim 1.0's fading process (2026-10-12): the receiver results agree within the run-to-run spread (VALIDATION.md) |
 | **M10** | Tracking + equalization | timing/carrier tracking; probe-trained DFE (LMS first for readability, RLS as an option) | 2-path static multipath; fading per Table XVI; equalizer convergence plots in the docs. **Done, with a change of design (2026-10-12):** prototypes showed that adaptive DFEs (LMS, RLS) cannot follow 5-Hz fading with the dozen taps a 5-ms channel needs, so the equaliser computes its coefficients from an LMMSE channel estimate (power-delay-profile prior) made at every probe and interpolated between probes, with two passes per frame; 75 bps uses the same estimates in a RAKE combiner. Every Table XVI row passes in short simulated runs (PERFORMANCE.md); 4800 bps now decodes on the real recording. Loss of signal is judged over 1 s, so fades no longer fragment messages. Convergence plots were replaced by the measurements in PERFORMANCE.md. The M8 tracker remains available (`--no-equalizer`) |
 | **M11** | 75-bps receiver; acquisition in fast fading | slot reading that follows a fading phase; counts checked against the following segments | short preambles on every Table XVI fading channel (19–20/20 acquired, was 16–18 on 5 Hz); 75L at its Table XVI point decodes 16/16 channels (M10: 13, lost to misread counts); no change on AWGN. **Done** (PERFORMANCE.md). Equaliser tracking changes were tried and measured, and none kept. Not done: acquisition without a preamble (late entry from probes alone, stretch goal S5); a 75-bps detector beyond the RAKE (noise-limited at the SNRs where it matters) |
-| **M12** | Streaming RX CLI + hardening | `m110c-rx` end-to-end; diagnostics on stderr (mode, SNR estimate, frequency offset, EOM) | §4.4 full suite; fuzzing; long-stream memory; **→ v0.9: decoder complete** |
+| **M12** | Streaming RX CLI + hardening | `m110c-rx` end-to-end; diagnostics on stderr (mode, SNR estimate, frequency offset, EOM) | §4.4 full suite; fuzzing; long-stream memory; **→ v0.9: decoder complete**. Candidates for on-air use (proposed 2026-10-12, not yet agreed): a TX sample-clock correction (`--tx-ppm`; sound cards can be tens of ppm off, the spec allows ±10 ppm, §4.2.1); radio-keying lead and hang times; in `--async` mode, idle stop bits with a keep-alive timeout instead of blocking (Appendix A send-all mode) |
 | **M13** | Conformance + docs | Table XVI report, walkthrough notebook, SPEC_NOTES finalized | all perf tests run and recorded. **→ v1.0** |
 
 Rough sizing: M0–M6 are mostly mechanical and spec-checkable; I expect each to take one or two
@@ -282,6 +282,12 @@ against Table XVI.
 - **S5**: 75-bps acquisition without a preamble, using the exceptional sets (§5.3.2.3.7.1.1 note).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
+- **S8**: the Appendix A TCP modem interface (data socket and remote control), so that
+  software built for real modems, such as STANAG 5066 stacks, can use `m110c` as one.
+- **S9**: interoperability tests against another implementation over an audio path
+  (e.g. MS-DMT, a Windows 110A sound-card modem), across mode, interleave and framing.
+  Until then, the claim is "symbol-exact with one fielded modem's recording", not
+  "interoperable".
 
 ---
 
@@ -294,3 +300,5 @@ against Table XVI.
 | Equalizer tuning becomes a time sink | Table XVI sets the bar. Stop at "meets spec", not "optimal" |
 | Python too slow for real time at 2400 bps with the long interleaver | Measure in M6/M12; vectorize the Viterbi across states; C port (S6) as a fallback |
 | Mis-transcribed tables | Double entry plus the derived-quantity cross-checks in M1 |
+| Our channel simulator flatters our receiver (same author, same reading of Appendix E) | E.7 checks (M9); receiver results repeated on PathSim 1.0's independently written fading process (VALIDATION.md). A shared misreading of Appendix E itself remains possible; the real recordings are the check against that |
+| Settings both ends must agree on but the waveform does not announce (sync vs async framing, bit order) | Defaults follow the real recordings (INT-016, INT-025); documented as operator settings |

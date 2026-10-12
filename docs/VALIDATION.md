@@ -180,6 +180,83 @@ Two of the M8 open points are explained by this:
 
 Processing took 0.1–0.4 s per second of recording (M8: 0.05–0.15 s).
 
+## Independent channel simulators (2026-10-12)
+
+Our fading-channel results (PERFORMANCE.md) were all measured on our own Watterson simulator
+(M9). It passes the Appendix E.7 checks, but a simulator and a receiver written by the same
+hands can share a mistake that flatters both. So two independently written HF channel
+simulators were tested against the same E.7 checks, and the one that passed was used to
+re-run the receiver measurements. No code from either is in this repository.
+
+### N4HY HFPathSimulatorLiveData: not usable as a reference
+
+[n4hy/HFPathSimulatorLiveData](https://github.com/n4hy/HFPathSimulatorLiveData) (MIT, 2026)
+is a large real-time simulator (Watterson, Vogler–Hoffmeyer, ITU presets, SDR I/O). Only its
+pure-Python Watterson and noise code could be tested: the compiled path needs CUDA. Measured:
+
+| Check | Result |
+|-------|--------|
+| Rayleigh statistics, path independence, delays | pass |
+| Doppler spectrum (Table E-I) at the nominal setting | fail: its "spread" gives a spectrum σ of spread/√2, Appendix E's is d/2; dividing the setting by √2 passes at 0.5 and 1 Hz |
+| Doppler spectrum at 5 and 10 Hz | fail whatever the setting: σ is capped at 2.26 Hz (fading filter clamped to one 50-ms update) |
+| Fading rate | depends on the caller's block size (one update per call): a "1 Hz" channel measured σ 0.09 Hz in 4096-sample calls, 2.1 Hz in 160-sample calls |
+| Zero Doppler | not a fixed path: the gain is redrawn at random every 50 ms |
+| Noise | SNR over the full sample-rate band, not 3 kHz (10 dB set = 15 dB in 3 kHz at 9600 S/s), and rescaled to each block's signal power, so the noise falls with every fade |
+
+Its CI has also not passed anywhere in the commit history we looked at. Not used further.
+
+### PathSim 1.0 (AE4JY): agrees with Appendix E and with our results
+
+PathSim (Moe Wheatley AE4JY, 2000, GPL v2+) is the long-standing amateur HF path simulator:
+Windows, 8000 S/s, up to three paths. Its channel code (`CPath`, `CGaussFIR`, `CDelay`,
+`CNoiseGen`) was ported to NumPy for measurement; the original was not run. Because that port
+is a translation of GPL code it is not committed; the method is below so it can be repeated.
+
+Its design matches Appendix E closely: the spread is the 2σ bandwidth (fading-filter power
+spectrum e^(−2f²/d²), as E.5.4), gains are computed at 12.8, 64 or 320 S/s (exactly 32× the
+spread at each range's upper edge) and brought to 8000 S/s by ×5 interpolation stages, and the
+fading filter is truncated at about ±3.1σ (≈1% of its peak).
+
+| E.7 check on the port | Result |
+|-----------------------|--------|
+| Doppler spectrum, Table E-I, at 0.5, 1, 2, 5, 10 Hz | pass at all five; σ within 2% of d/2; worst point 1.9 dB (0.5 Hz, 30 dB down; 2.0 allowed) |
+| Rayleigh statistics | P(\|h\|² < 0.1 mean) 0.098 (ideal 0.095); MSVC's 15-bit `rand()` makes no measurable difference |
+| Continuity | no steps (largest sample-to-sample change 4.6× the median) |
+| Paths | equal power (1/n), independent (correlation 0.008); delays whole samples at 8000 S/s |
+| Noise | 3-kHz band-limited, S/N 10.04 dB for 10 set; level fixed while the signal fades |
+
+One caveat for anyone using PathSim itself: the noise level follows a running average of the
+*input* level (about 5 s), starting from a fixed value, so the SNR is wrong for the first
+seconds of a run and around silences, which is where a preamble usually is.
+
+**Cross-check.** Our simulator was run with only its fading process replaced by the port's
+(generated at 8000 S/s, interpolated to 9600; the gains are band-limited to tens of hertz, so
+this is exact for practical purposes). Delays, the analytic conversion and the Appendix E
+noise stayed ours, so differences come from the fading alone. The same scripts and seeds as
+PERFORMANCE.md (M11):
+
+| Measurement | Our fading | PathSim fading |
+|-------------|------------|----------------|
+| 75L on 5 ms, 5 Hz, clean of 16 at 2 / 0 / −1 dB | 16 / 15 / 8 | 16 / 16 / 9 |
+| Table XVI fading rows, 4 channels each | all meet the requirement | all meet the requirement (4800 bps on 2 ms, 0.5 Hz: BER 6e-4 from two channels, against 1e-3) |
+| Short interleave, decoded of 20, per fading row | 16–20 | 18–20 |
+| 2400S on 2 ms, 5 Hz, decoded of 20 | 17 | 19 |
+| First-segment detections, 100 channels: 75S at 2 dB / 300S at 7 dB | 78 / 87 | 69 / 84 |
+
+Every difference is within the run-to-run spread. One pattern in 20-channel runs (more
+first-segment detections with PathSim's fading on the 5-Hz rows) reversed with 100 channels.
+At −1 dB the 75L failures look the same with either fading: partial decodes of a few hundred
+bit errors, the demodulator's limit.
+
+**What this shows, and what it does not.** It rules out an implementation error in our fading
+process that flatters the receiver. It cannot rule out a misreading of Appendix E itself that
+PathSim shares: both descend from the same Watterson/CCIR tradition. The real recordings
+remain the check against reality.
+
+**Repeating it:** port PathSim's `CPath::CalcPath` gain generation (Gaussian FIR at the
+spread-dependent rate, then the ×5 `X5IntrpFIRCoef` stages), and substitute it for
+`m110c.channel.watterson.FadingGain` (same `next(n)` interface; per-path power as passed).
+
 ## Limitations
 
 - The exploratory demodulator is not committed; the real receiver (`m110c-rx`, above) has
