@@ -203,10 +203,10 @@ def test_corrupted_prefix_is_rejected():
     assert search.process(x) is None and search.flush() is None
 
 
-def preamble_75l(counts, bad_prefix=(), silent=()):
-    """A 75L preamble whose segments carry ``counts``, with two prefix slots wrong in the
+def preamble_75l(counts, bad_prefix=(), silent=(), interleave="long"):
+    """A 75-bps preamble whose segments carry ``counts``, with two prefix slots wrong in the
     segments listed in ``bad_prefix`` and the segments in ``silent`` not sent at all."""
-    m = mode(75, "long")
+    m = mode(75, interleave)
     tribits = []
     for i, count in enumerate(counts):
         prefix = list(T.PREAMBLE_FIXED_PREFIX)
@@ -247,15 +247,30 @@ def test_a_count_contradicted_by_the_next_segments_is_rejected(case, expected_se
     "counts, silent",
     [
         (range(23, -1, -1), (1,)),  # confirmed two segments on: 21 = 23 - 2
-        (range(23, -1, -1), (1, 2)),  # nothing readable after it: nothing contradicts
         ((23, 22, 5, *range(20, -1, -1)), ()),  # the first readable segment decides
     ],
-    ids=["two on", "unreadable", "first decides"],
+    ids=["two on", "first decides"],
 )
-def test_a_count_that_is_not_contradicted_stands(counts, silent):
+def test_a_confirmed_count_stands(counts, silent):
     """The 75L count 23, at the start of the preamble, with later segments as listed."""
     d = first_detection(preamble_75l(counts, silent=silent))
     assert d is not None and d.count == 23 and abs(d.segment_start - 1000) < 0.1
+
+
+def test_an_unconfirmed_count_waits_for_a_confirmed_one():
+    """Nothing readable after the first segment: its count is not taken on trust while
+    later segments can still check one (M13: at 75 bps a count misread in a fade, with the
+    next segments faded too, put the data phase a whole segment late). The first segment
+    after the gap, confirmed by the next, is used instead."""
+    d = first_detection(preamble_75l(range(23, -1, -1), silent=(1, 2)))
+    assert d is not None and d.count == 20 and abs(d.segment_start - (1000 + 3 * 480 * 4)) < 0.1
+
+
+def test_a_count_with_no_segments_left_to_check_it_stands():
+    """A short preamble's first segment (count 2) with the other two unreadable: nothing
+    could ever confirm it, so it stands."""
+    d = first_detection(preamble_75l((2, 1, 0), silent=(1, 2), interleave="short"))
+    assert d is not None and d.count == 2 and abs(d.segment_start - 1000) < 0.1
 
 
 # --- Fading (M11) -------------------------------------------------------------------------

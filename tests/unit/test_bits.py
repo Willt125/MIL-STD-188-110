@@ -50,6 +50,7 @@ def test_partial_byte_is_rejected():
 
 
 def test_int_011_eom_as_bits():
+    """INT-011."""
     bits = int_to_bits(T.EOM_SEQUENCE, T.EOM_BITS)
     assert bits[:8].tolist() == [0, 1, 0, 0, 1, 0, 1, 1]
     assert len(bits) == 32

@@ -48,7 +48,10 @@ def _open_out(path: str):
 
 
 def _read_pieces(stream):
-    """Yield the input as it becomes available (a short read does not mean end of file)."""
+    """Yield the input as it becomes available (a short read does not mean end of file).
+
+    Blocks while no input is available; EOF ends the message and leads to the EOM (INT-017).
+    """
     read = getattr(stream, "read1", stream.read)
     while True:
         piece = read(READ_SIZE)

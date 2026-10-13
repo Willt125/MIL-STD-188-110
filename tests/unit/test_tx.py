@@ -100,6 +100,7 @@ def sample_message(seed=0, n_bytes=50) -> np.ndarray:
 @pytest.mark.parametrize("m", MODES, ids=ids(MODES))
 @pytest.mark.parametrize("n_bytes", [0, 1, 37, 400])
 def test_total_length(m, n_bytes):
+    """INT-014: preamble, then the data blocks, with nothing in between."""
     tribits = transmit(sample_message(n_bytes=n_bytes), m)
     assert tribits.size == m.preamble_symbols + expected_data_symbols(m, 8 * n_bytes)
 
@@ -156,8 +157,8 @@ def test_data_phase_starts_with_unknown_symbols(m):
 
 
 def test_int_004_scrambler_runs_through_probes_from_data_start():
-    """If the scrambler restarted per frame or skipped probes, descrambling with one
-    continuous sequence would leave probes non-zero."""
+    """INT-004: if the scrambler restarted per frame or skipped probes, descrambling with
+    one continuous sequence would leave probes non-zero."""
     m = mode(600, "short")
     raw = transmit(sample_message(), m)[m.preamble_symbols :]
     seq = scrambler.data_sequence(0, raw.size)
@@ -227,12 +228,14 @@ def test_streaming_is_chunk_invariant(m, chunk_sizes):
 
 
 def test_preamble_is_released_immediately():
+    """INT-014: the preamble does not wait for input; data blocks follow it."""
     m = mode(2400, "long")
     out = Transmitter(m).process(np.zeros(0, np.uint8))
     assert out.size == m.preamble_symbols
 
 
 def test_frames_are_released_as_soon_as_complete():
+    """INT-017: no idle fill; the transmitter waits for input."""
     m = mode(1200, "zero")  # no interleaver: 20 user bits fill one 40-symbol frame
     tx = Transmitter(m)
     tx.process(np.zeros(0, np.uint8))

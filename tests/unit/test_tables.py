@@ -27,6 +27,7 @@ def as_phasors(tribits) -> np.ndarray:
 
 
 def test_int_011_eom_first_eight_bits_match_spec_example():
+    """INT-011: most significant digit first."""
     # "Thus the first eight bits are, left to right, 0100 1011."
     assert bits_msb_first(T.EOM_SEQUENCE, T.EOM_BITS)[:8] == [0, 1, 0, 0, 1, 0, 1, 1]
 
@@ -118,7 +119,7 @@ def test_table_viii_has_gray_property_on_the_8psk_circle():
 
 
 def test_int_020_table_ix_with_figure_5_has_gray_property():
-    """Same property for dibits: Table IX output goes to tribits 0,2,4,6 (Figure 5)."""
+    """INT-020. Same property for dibits: Table IX output goes to tribits 0,2,4,6 (Figure 5)."""
     inverse = {T.FIGURE_5_TWO_BIT[v]: bits for bits, v in T.TABLE_IX.items()}
     phases = sorted(inverse)
     assert phases == [0, 2, 4, 6]
@@ -128,6 +129,7 @@ def test_int_020_table_ix_with_figure_5_has_gray_property():
 
 
 def test_int_020_figure_5_one_bit_symbols_are_antipodal():
+    """INT-020."""
     assert T.FIGURE_5_ONE_BIT == {0: 0, 1: 4}
 
 
@@ -191,6 +193,7 @@ def count_symbols_by_text_rule(count: int) -> tuple[int, int, int]:
 
 
 def test_int_001_text_rule_reproduces_the_worked_note():
+    # INT-001.
     # "The converted count of 23 (010111) would have values of 5, 5, and 7"
     assert count_symbols_by_text_rule(23) == (5, 5, 7)
 

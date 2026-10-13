@@ -28,7 +28,8 @@ def test_int_002_tap_vectors_are_octal_133_and_171():
 
 
 def test_impulse_response_is_the_tap_vectors():
-    """A single 1 followed by zeros plays out each generator's taps, delay by delay."""
+    """A single 1 followed by zeros plays out each generator's taps, delay by delay.
+    Only true if the register starts cleared (INT-023)."""
     out = fec.encode(np.array([1, 0, 0, 0, 0, 0, 0]))
     assert out[0::2].tolist() == fec.TAPS_T1.tolist()
     assert out[1::2].tolist() == fec.TAPS_T2.tolist()
@@ -128,6 +129,7 @@ def test_trellis_agrees_with_encoder(state):
 
 
 def test_int_008_pairs_are_repeated_as_units():
+    """INT-008: T1 T2 T1 T2, not T1 T1 T2 T2."""
     coded = np.array([1, 0, 0, 1])
     assert fec.repeat_pairs(coded, 2).tolist() == [1, 0, 1, 0, 0, 1, 0, 1]
     assert fec.repeat_pairs(coded, 1).tolist() == coded.tolist()
@@ -199,7 +201,7 @@ def test_erasures_carry_no_information_but_do_not_break_decoding():
 
 
 def test_unknown_start_state_recovers_after_a_few_constraint_lengths():
-    """Late entry: start decoding mid-stream with no idea of the encoder state."""
+    """Late entry: start decoding mid-stream with no idea of the encoder state (INT-023)."""
     rng = np.random.default_rng(3)
     message = rng.integers(0, 2, 400)
     soft = fec.hard_to_soft(encode_terminated(message))

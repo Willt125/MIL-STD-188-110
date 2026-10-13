@@ -58,6 +58,7 @@ def test_fetch_restarts_one_column_right_of_last_diagonal():
 
 @pytest.mark.parametrize("m", [mode(75, "long"), mode(75, "short")], ids=["75L", "75S"])
 def test_int_007_75bps_uses_step_7(m):
+    """INT-007: 75 bps loads rows in steps of 7 and fetches columns in steps of -7."""
     rows, cols = m.interleaver_rows, m.interleaver_cols
     load = load_positions(rows, cols, m.interleaver_load_row_step)
     assert [row_col(p, cols)[0] for p in load[:3]] == [0, 7, 14 % rows]
@@ -70,7 +71,8 @@ def test_int_007_75bps_uses_step_7(m):
 
 @pytest.mark.parametrize("m", INTERLEAVED, ids=ids(INTERLEAVED))
 def test_permutation_matches_literal_oracle(m):
-    """Feed the oracle the input *indices*; what comes out is the permutation itself."""
+    """Feed the oracle the input *indices*; what comes out is the permutation itself.
+    Covers the 75-bps variants and the fetch-then-reset reading (INT-007)."""
     n = m.interleaver_bits
     expected = oracle.interleave(
         list(range(n)),
@@ -84,6 +86,7 @@ def test_permutation_matches_literal_oracle(m):
 
 @pytest.mark.parametrize("m", INTERLEAVED, ids=ids(INTERLEAVED))
 def test_permutation_is_a_bijection(m):
+    # INT-007: includes the 75-bps 20x36 and 10x9 matrices.
     perm = permutation(m)
     assert perm.size == m.interleaver_bits
     assert np.array_equal(np.sort(perm), np.arange(m.interleaver_bits))

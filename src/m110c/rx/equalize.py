@@ -99,6 +99,15 @@ FREQUENCY_TIME_CONSTANT_S = 1.0
 SUB_BLOCK = 8  # symbols per equaliser coefficient update
 RIDGE = 1e-6  # least squares: regularisation relative to the average symbol energy
 LOSS_SECONDS = 1.0
+# 75 bps has no probes, so in the data phase the loops learn from decided symbols, through
+# fades. Over a long message that let the timing loop's period run away (docs/PERFORMANCE.md,
+# M13). There: units with less than this share of the power as signal teach no loop, and
+# the period (the clock offset, learned in the preamble) adapts this much more slowly.
+TRACK_FRACTION_75 = 0.1
+PERIOD_GAIN_75 = 0.1
+# 75 bps, data phase: a realignment must land where the set-correlation profile (which does
+# not depend on decisions) sees a path, within this many dB of its strongest.
+SET_CONFIRM_DB = 6.0
 LOSS_SNR_DB = -6.0  # as a power share, 0.2, averaged over LOSS_SECONDS; noise alone gives ~0
 
 
@@ -314,6 +323,7 @@ class EqualizingDemodulator:
         self._points = np.exp(1j * np.pi / 4 * symbols.CONSTELLATION[n].astype(float))
         # Channel state.
         self.profile = None  # PDP over the wide span
+        self.set_profile = None  # 75 bps: set-correlation energy over the wide span
         self._estimates = deque(maxlen=2)  # (centre symbol, h, noise variance)
         self._peak_reference = None  # where the strongest path's peak should be (taps)
         self._clock = LineFit()  # (symbol, arrival time) for the clock-offset estimate
@@ -492,8 +502,13 @@ class EqualizingDemodulator:
         signal = float(np.sum(np.abs(h) ** 2))
         centre = k1 - self.a - self._window(k1) / 2
         usable = signal > 1e-12 * max(noise, 1e-30)
+        # (75 bps, data phase: a unit that is mostly noise teaches the loops nothing.)
+        learn = usable and not (
+            self.mode.is_75bps and self.in_data_phase and self._fit_fraction < TRACK_FRACTION_75
+        )
         if usable:
-            self._track(h, centre)
+            if learn:
+                self._track(h, centre)
             self._estimates.append((centre, h, max(noise, 1e-12 * signal)))
         self._next_symbol = k1
         output = None
@@ -509,7 +524,14 @@ class EqualizingDemodulator:
         # SNR = signal / noise = f / (1 - f), for f the signal's share of the power.
         self.unit_snr_db.append(_db(fraction / (1 - fraction)) if fraction < 1 else float("inf"))
         edge = leading_edge(self.profile, self.wide)
-        if usable and not -2 < edge < 3:  # a path appeared earlier, or the first one faded
+        confirmed = True
+        if self.mode.is_75bps and not training:
+            # No probes: the profile above comes from decided symbols, and in a deep fade it
+            # can show a phantom path 15-20 symbols away. The sets themselves say where the
+            # signal is (docs/PERFORMANCE.md, M13).
+            self._update_set_profile(k0, k1)
+            confirmed = self._sets_confirm(edge)
+        if learn and confirmed and not -2 < edge < 3:  # a path appeared earlier, or faded
             self._realign(edge)
         return self._hold(output, fraction, k0, k1)
 
@@ -563,6 +585,8 @@ class EqualizingDemodulator:
         bandwidth = self.timing_bandwidth_hz if self.in_data_phase else TRAINING_TIMING_HZ
         w_t = 2 * np.pi * bandwidth * n / T.SYMBOL_RATE
         kp, ki = 2 * TIMING_DAMPING * w_t, w_t**2
+        if self.mode.is_75bps and self.in_data_phase:
+            ki *= PERIOD_GAIN_75
         # The timing detector uses the plain least-squares estimate: the LMMSE one leans
         # towards the long-term profile, which lags behind a drifting clock.
         error = self._timing_error(self._least_squares) * self.period
@@ -613,6 +637,8 @@ class EqualizingDemodulator:
             self._peak_reference -= edge
             self._last_peak -= edge
         self.profile = _shift(self.profile, edge)
+        if self.set_profile is not None:
+            self.set_profile = _shift(self.set_profile, edge)
         self._estimates = deque(((c, _shift(h, edge), n) for c, h, n in self._estimates), maxlen=2)
 
     def _h_at(self, k: float) -> np.ndarray:
@@ -665,6 +691,44 @@ class EqualizingDemodulator:
         self._sym[k0 - self._sym_start : k1 - self._sym_start] = decided
         var = max(float(np.mean(np.abs(z - decided) ** 2)), 1e-6)
         return z, np.full(z.size, var)
+
+    def _update_set_profile(self, k0: int, k1: int) -> None:
+        """75 bps: where the sets are, without the equaliser's help.
+
+        Each set is one of four known 32-symbol patterns, scrambled by a sequence tied to
+        the symbol count. Read at the right delay, a set correlates strongly with one
+        pattern; read at a wrong one, even a whole set away, the scrambling no longer
+        matches and it correlates with none. So the best pattern's energy, at every tap of
+        the wide span, is a delay profile of the signal that does not depend on decisions
+        or on the channel estimate (and is phase-free: the magnitude of the correlation).
+        """
+        k = np.arange(k0, k1)
+        rotation = np.exp(1j * np.pi / 4 * self._scrambling[k - self._scrambling_start])
+        obs = self._observations(k[None, :] + self.wide[:, None]) / rotation
+        sets = obs.reshape(self.wide.size, -1, T.TRIBITS_PER_75BPS_SET)
+        first = (k0 - self.n_train) // T.TRIBITS_PER_75BPS_SET
+        energy = np.zeros(self.wide.size)
+        for i in range(sets.shape[1]):
+            exceptional = symbols.is_exceptional_set(first + i, self.mode)
+            patterns = demap._EXCEPTIONAL if exceptional else demap._NORMAL
+            energy += np.max(np.abs(sets[:, i, :] @ patterns.conj().T) ** 2, axis=1)
+        memory = np.exp(-self._unit_length() / (PROFILE_SECONDS * T.SYMBOL_RATE))
+        if self.set_profile is None:
+            self.set_profile = energy
+        else:
+            self.set_profile = memory * self.set_profile + (1 - memory) * energy
+
+    def _sets_confirm(self, edge: int) -> bool:
+        """75 bps: does the set profile see a path where a realignment would put tap 0?
+        A set read at a wrong delay still collects 32 symbols of signal and noise (and the
+        best of four patterns more), so most taps sit on that floor: their median. A path
+        shows as energy above it, a symbol or so wide (sampling falls between taps)."""
+        excess = np.maximum(self.set_profile - np.median(self.set_profile), 0)
+        if excess.max() <= 0:
+            return False
+        i = int(np.searchsorted(self.wide, edge))
+        near = excess[max(0, i - 1) : i + 2]
+        return bool(near.max() >= excess.max() * 10 ** (-SET_CONFIRM_DB / 10))
 
     def _decide_set(self, k0: int, z: np.ndarray) -> np.ndarray:
         """The pattern (normal or exceptional, by position) that best matches the set."""

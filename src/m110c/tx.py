@@ -20,7 +20,9 @@ Usage::
     out.append(tx.finish())                        # EOM and flush
 
 Output appears as soon as it is fully determined: the preamble on the first call, then
-each complete frame (or 75-bps set). With an interleaver, nothing can leave until a whole
+each complete frame (or 75-bps set), so the stream is preamble, block 1, block 2, ...
+(INT-014). There is no idle fill: the framer waits for input, and :meth:`finish` (end of
+input) starts the EOM phase (INT-017). With an interleaver, nothing can leave until a whole
 block of input has arrived. At most one interleaver block and one frame of channel bits
 are ever buffered.
 

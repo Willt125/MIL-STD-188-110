@@ -300,6 +300,13 @@ class PreambleSearch:
             if following[3] != count - j:
                 return None
             break
+        else:
+            # Nothing after it could be read. A count with later segments to check it against
+            # is not taken on trust: wait for a segment that is confirmed. A long preamble has
+            # 24 segments, so only its last two (and a short preamble) go unchecked. (M13: at
+            # 75 bps a misread count in a fade put the data phase a segment late.)
+            if count > CONFIRM_SEGMENTS:
+                return None
         if self.zero_interleave and found.interleave == "short":
             found = mode(found.rate, "zero")  # INT-012: zero and short share D1/D2
         return Detection(

@@ -58,7 +58,7 @@ def test_gains_computed_at_least_32_times_the_fading_bandwidth(doppler_hz, sampl
 def test_doppler_spectrum_meets_table_e_i():
     """Table E-I (single path, 1 Hz): within +/-1.5 dB of the ideal Gaussian where it is
     20 dB down, +/-2.0 dB where it is 30 dB down. Kaiser-windowed average over 3 hours, as
-    E.7.4 recommends. Measured: deviations of 0.4 dB or less."""
+    E.7.4 recommends. Measured: deviations of 0.4 dB or less. INT-027: doppler_hz is 2 sigma."""
     h, rate = gain_samples(1.0, 3)
     nfft = 1024
     window = np.kaiser(nfft, 8)
@@ -119,7 +119,7 @@ def test_paths_fade_independently():
     [(2.0, 9600, 19), (5.0, 9600, 48), (2.0, 48000, 96), (0.5, 9600, 5)],  # 4.8 rounds to 5
 )
 def test_two_paths_are_delay_spread_apart(delay_ms, sample_rate, taps):
-    """E.5.2: L = delay spread / sampling period, rounded (2 ms at 9600 S/s: 19.2 -> 19)."""
+    """INT-028: L = delay spread / sampling period, rounded (2 ms at 9600 S/s: 19.2 -> 19)."""
     ch = WattersonChannel(ChannelSpec(2, delay_ms, 0.0), sample_rate)
     impulse = np.zeros(200, complex)
     impulse[0] = 1

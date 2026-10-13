@@ -102,7 +102,7 @@ def test_int_010_exceptional_sets_are_last_of_each_block(interleave, period):
 
 
 def test_int_024_75bps_sets_follow_mgd_then_table_x():
-    """Figure 2 puts the MGD before symbol formation at every rate, and Table IX lists
+    """INT-024: Figure 2 puts the MGD before symbol formation at every rate, and Table IX lists
     75 bps: channel bits 10 -> MGD 11 -> Table X a row 11."""
     m = mode(75, "short")
     out = symbols.data_sets_75bps(np.array([1, 0], dtype=np.uint8), m, first_set_index=0)
@@ -141,6 +141,7 @@ def test_plain_probe_is_all_zero(m):
 
 @pytest.mark.parametrize("m", FRAMED, ids=lambda m: m.name)
 def test_int_006_d_probe_is_table_xiii_twice_then_zero_padding(m):
+    """INT-006: first 8 tribits of Table XIII twice, then zeros."""
     d1, d2 = m.d1_d2
     for d in (d1, d2):
         probe = symbols.probe_tribits(m, d)
@@ -153,6 +154,7 @@ def test_int_006_d_probe_is_table_xiii_twice_then_zero_padding(m):
 
 
 def test_int_001_count_symbols():
+    """INT-001: symbol = 4 + two-bit value (the text and note, not Table XII)."""
     assert symbols.count_symbols(23) == (5, 5, 7)
     assert symbols.count_symbols(2) == (4, 4, 6)
     assert symbols.count_symbols(0) == (4, 4, 4)

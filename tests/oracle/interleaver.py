@@ -1,6 +1,7 @@
 """Literal transcription of the interleave load (§5.3.2.3.4) and fetch (§5.3.2.3.5).
 
 Uses a list-of-lists matrix and row/column counters, following the wording step by step.
+The fetch reads the last row before resetting, and 75 bps uses steps of 7 (INT-007).
 """
 
 

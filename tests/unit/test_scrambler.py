@@ -75,7 +75,7 @@ def test_data_sequence_uses_all_eight_values_roughly_evenly():
 
 @given(st.integers(0, 10_000), st.integers(0, 500))
 def test_int_004_data_sequence_is_positional(start, count):
-    """Value i depends only on i, so a streaming framer just remembers its position."""
+    """INT-004: value i depends only on i, so a streaming framer just remembers its position."""
     whole = S.data_sequence(0, start + count)
     assert np.array_equal(S.data_sequence(start, count), whole[start:])
 

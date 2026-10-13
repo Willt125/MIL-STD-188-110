@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "m110c"
-version = "0.0.1"
+version = "1.0.0"
 description = "Readable, educational encoder/decoder for the MIL-STD-188-110C serial-tone HF modem"
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,9 @@ m110c-chan = "m110c.cli:main_chan"
 
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6"]
-dev = ["pytest>=7", "hypothesis>=6", "ruff"]
+dev = ["pytest>=7", "hypothesis>=6", "ruff", "matplotlib"]
+# docs/walkthrough.ipynb: python tools/build_notebook.py
+notebook = ["matplotlib", "nbformat", "nbclient", "ipykernel"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/m110c"]
