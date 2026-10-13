@@ -9,7 +9,7 @@ description = "Readable, educational encoder/decoder for the MIL-STD-188-110C se
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.24"]
+dependencies = ["numpy>=1.24", "threadpoolctl>=3.1"]
 
 [project.scripts]
 m110c-tx = "m110c.cli:main_tx"

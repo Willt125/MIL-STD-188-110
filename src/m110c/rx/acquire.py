@@ -232,7 +232,12 @@ class PreambleSearch:
             total = np.zeros(count)
             for j, v in enumerate(PREFIX):
                 total += np.abs(corr[v][j * self.slot : j * self.slot + count]) ** 2
-            rho[i] = np.where(silent, 0.0, total / (self.ref_energy * np.maximum(energy, 1e-300)))
+            # One huge sample (garbage read as cf32 reaches 3.4e38) swamps the block: its
+            # energy dwarfs everything after it, and the ratio may overflow. That block's
+            # values are meaningless and the preamble is found in a later segment.
+            with np.errstate(over="ignore", invalid="ignore"):
+                ratio = total / (self.ref_energy * np.maximum(energy, 1e-300))
+            rho[i] = np.where(silent, 0.0, ratio)
         return rho
 
     def _search_block(self, start: int, count: int) -> tuple[Detection | None, bool]:

@@ -75,12 +75,13 @@ from collections import deque
 import numpy as np
 
 from .. import scrambler, symbols
+from .._blas import single_threaded_blas
 from ..modulate import rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from . import demap
 from .acquire import SLOT_TRIBITS, Detection
-from .track import interpolate
+from .track import UNIT_HISTORY, interpolate
 
 PRECURSOR_TAPS = 4  # A: pulse tails before the leading path
 POSTCURSOR_TAPS = 20  # B: delayed paths up to ~7 ms, plus pulse tails
@@ -319,7 +320,9 @@ class EqualizingDemodulator:
         self._last_peak = 0.0
         self.anchored = False
         # Loss handling.
-        self.unit_snr_db: list[float] = []
+        # Each unit's SNR in dB, for diagnostics: only the most recent are kept, so that
+        # memory stays bounded however long the message.
+        self.unit_snr_db: deque = deque(maxlen=UNIT_HISTORY)
         self.lost = False
         self._held: deque = deque()
         self._quality: deque = deque()  # (signal fraction, symbols, first symbol) per unit
@@ -341,6 +344,7 @@ class EqualizingDemodulator:
         """Sample time of the next observation to be taken."""
         return self._t_base + (self._obs_start + self._obs.size - self._i_base) * self.period
 
+    @single_threaded_blas
     def process(self, samples: np.ndarray):
         self._filter(np.asarray(samples))
         out = []
@@ -361,6 +365,7 @@ class EqualizingDemodulator:
             self._trim()
         return self._join(out)
 
+    @single_threaded_blas
     def finish(self):
         """End of input: equalise what can be (missing future samples count as zero), then
         release held units except trailing bad ones."""

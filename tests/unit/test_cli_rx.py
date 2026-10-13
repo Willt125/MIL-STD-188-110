@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pytest
 
 from m110c import io
 from m110c.modulate import modulate
@@ -106,3 +107,29 @@ def test_no_equalizer_selects_the_m8_receiver():
     multipath = io.encode_samples((x + late) / np.sqrt(2), "cf32")[0]
     assert run([*CLI, "rx", "-q"], multipath).stdout == MESSAGE
     assert run([*CLI, "rx", "-q", "--no-equalizer"], multipath).stdout != MESSAGE
+
+
+def test_a_line_when_each_message_starts_and_one_when_it_ends():
+    tx = run([*CLI, "-q", "-r", "1200"], b"hello")
+    out = run([*CLI, "rx"], tx.stdout + tx.stdout)
+    lines = out.stderr.decode().splitlines()
+    assert out.stdout == b"hellohello"
+    assert [line.endswith("receiving") for line in lines] == [True, False, True, False]
+    assert "1200S preamble at 0.00 s" in lines[0] and "EOM found" in lines[1]
+
+
+@pytest.mark.parametrize("channels, rate", [(0, 9600), (1, 0)])
+def test_wav_header_with_no_channels_or_zero_rate(channels, rate):
+    """Both used to end in a traceback (a rate of 0 even passed the multiple-of-2400 check)."""
+    data = b"\0" * 1000
+    header = (
+        b"RIFF"
+        + struct.pack("<I", 36 + len(data))
+        + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, channels, rate, 2 * rate, 2, 16)
+        + b"data"
+        + struct.pack("<I", len(data))
+    )
+    out = run([*CLI, "rx", "-f", "wav"], header + data)
+    assert out.returncode == 1 and b"Traceback" not in out.stderr
+    assert b"no channels or a zero sample rate" in out.stderr

@@ -20,7 +20,7 @@ from m110c import fec, mgd, scrambler, symbols
 from m110c.interleave import Deinterleaver
 from m110c.spec import all_modes, mode
 from m110c.spec import tables as T
-from m110c.tx import Transmitter, transmit, transmit_bytes
+from m110c.tx import Transmitter, data_phase_symbols, transmit, transmit_bytes
 
 MODES = all_modes()
 FRAMED = [m for m in MODES if not m.is_75bps]
@@ -272,3 +272,13 @@ def test_two_transmitters_are_independent():
     out_a.append(ta.finish())
     assert np.array_equal(np.concatenate(out_a), transmit(msg_a, a))
     assert np.array_equal(np.concatenate(out_b), transmit(msg_b, b))
+
+
+@settings(max_examples=60, deadline=None)
+@given(m=st.sampled_from(all_modes()), n_bits=st.integers(0, 3000))
+def test_data_phase_length_matches_the_transmitter(m, n_bits):
+    """The receiver places a message's end with data_phase_symbols (M12); it must agree
+    exactly with what the framer sends, for every mode and length."""
+    tribits = transmit(np.zeros(n_bits, dtype=np.uint8), m)
+    preamble = symbols.preamble_tribits(m).size
+    assert tribits.size - preamble == data_phase_symbols(m, n_bits)

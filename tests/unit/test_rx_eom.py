@@ -121,3 +121,25 @@ def test_input_after_the_eom_is_ignored():
     det.process(np.concatenate([message(11, 50), EOM_BITS, FLUSH]))
     assert det.found
     assert det.process(np.ones(100, np.uint8)).size == 0 and det.finish().size == 0
+
+
+@settings(max_examples=30, deadline=None)
+@given(
+    n=st.integers(0, 600),
+    seed=st.integers(0, 1000),
+    chunks=st.lists(st.integers(1, 200), min_size=1, max_size=5),
+)
+def test_payload_bits_counts_the_bits_before_the_eom(n, seed, chunks):
+    """The receiver places a message's end from this count (M12), so it must be exact
+    however the bits arrive."""
+    msg = message(seed, n)
+    det = EomDetector()
+    bits = np.concatenate([msg, EOM_BITS, FLUSH])
+    i = 0
+    for size in itertools.cycle(chunks):
+        if i >= bits.size:
+            break
+        det.process(bits[i : i + size])
+        i += size
+    det.finish()
+    assert det.found and det.payload_bits == n

@@ -24,9 +24,11 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .. import bits as bitops
+from .._blas import single_threaded_blas
 from ..framing import AsyncDecoder, AsyncFormat
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
+from ..tx import data_phase_symbols
 from .acquire import Detection, PreambleSearch
 from .decode import DataDecoder
 from .eom import EomDetector
@@ -76,6 +78,7 @@ class Receiver:
         self.threshold = threshold
         self.equalize = equalize  # False: the M8 single-gain tracker (for comparison)
         self.messages: list[Message] = []
+        self._message: Message | None = None
         self._raw = np.zeros(0, dtype=complex)  # recent input
         self._raw_start = 0  # global index of _raw[0]
         self._samples_in = 0
@@ -83,8 +86,19 @@ class Receiver:
 
     # -- public ------------------------------------------------------------------------
 
+    @property
+    def receiving(self) -> Message | None:
+        """The message being received now (its preamble found, its end not yet reached),
+        or None. It moves to :attr:`messages` when it ends."""
+        return self._message if self._demod is not None else None
+
+    @single_threaded_blas
     def process(self, samples: np.ndarray) -> bytes:
         x = np.asarray(samples)
+        if not np.all(np.isfinite(x)):
+            # A NaN or infinite sample (a corrupt file, random bytes read as cf32) carries no
+            # information: treat it as silence rather than let it poison every filter.
+            x = np.where(np.isfinite(x), x, 0)
         if self.invert_spectrum:
             x = np.conj(x)  # INT-021: a lower-sideband signal is the mirror image
         self._raw = np.concatenate([self._raw, x])
@@ -107,23 +121,38 @@ class Receiver:
         self._trim()
         return bytes(out)
 
+    @single_threaded_blas
     def finish(self) -> bytes:
-        """End of input: search what is left, then close any message in progress."""
+        """End of input: close any message in progress, and receive any further
+        transmissions in the samples still buffered (the input may end soon after one)."""
         out = b""
-        if self._demod is None:
-            detection = self._search.flush()
-            if detection is None:
-                return b""
+        unsearched = self._demod is not None  # samples after the message's end, if so
+        if unsearched:
+            out += self._end_message(final=True)
+        last_start = None
+        while True:
+            detection = None
+            if unsearched:  # a new search starts at the message's end: give it the rest
+                detection = self._search.process(self._raw_from(self._search_from))
+            detection = detection or self._search.flush()
+            if detection is None or (
+                last_start is not None and detection.segment_start <= last_start
+            ):
+                return out  # (the second test only guards against looping on one preamble)
+            last_start = detection.segment_start
             self._start_message(detection)
             out += self._feed_message(self._raw_from(self._demod_start))
-            if self._demod is None:  # it ended inside the remaining samples
-                return out
-        return out + self._end_message(final=True)
+            if self._demod is not None:  # still in progress where the input ends
+                out += self._end_message(final=True)
+            unsearched = True
 
     # -- message lifecycle --------------------------------------------------------------
 
     def _start_search(self, position: int) -> None:
         options = {} if self.threshold is None else {"threshold": self.threshold}
+        # Let the old search go first: each holds ~17 MB of precomputed FFTs, and two at
+        # once at every message end set the receiver's peak memory.
+        self._search = None
         self._search = PreambleSearch(
             self.sample_rate,
             self.carrier_hz,
@@ -170,23 +199,33 @@ class Receiver:
         msg = self._message
         msg.eom_found = eom.found
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
-        msg.snr_db = decoder.snr_db
         msg.clock_ppm = demod.clock_ppm
-        msg.end_sample = self._message_end(demod)
+        msg.end_sample = self._message_end(demod, eom)
+        if eom.found:  # measure the message only, not whatever followed it
+            msg.snr_db = decoder.snr_db_before(data_phase_symbols(msg.mode, eom.payload_bits))
+        else:
+            msg.snr_db = decoder.snr_db
         self.messages.append(msg)
         self._start_search(max(msg.end_sample, self._raw_start))
         return out
 
-    def _message_end(self, demod) -> int:
+    def _message_end(self, demod, eom) -> int:
         """Where the transmission ended, so the search for the next one can start there.
 
-        The demodulator runs about a second ahead of the decoder (it holds output back while
-        it judges loss of signal), so its position is past the end. But the decoder only
-        gets the last block, and so the EOM, once the demodulator has seen a second of
-        whatever followed: by then it has declared the signal lost where its final run of
-        bad units began. (Computing the end from the EOM's position as well was tried; it
-        never changed a result, so it was removed.)"""
-        if demod.lost and demod.end_symbol is not None:
+        With an EOM, the end is known exactly: the framer's arithmetic gives the length of
+        the data phase from the number of payload bits before it (:func:`data_phase_symbols`).
+        Without one, the demodulator's position is all there is, and it runs about a second
+        ahead of the decoder (it holds output back while it judges loss of signal). When the
+        signal stops, it declares loss where its final run of bad units began, which is
+        close. When another transmission follows at once, it may not declare loss at all:
+        a 75-bps demodulator finds a 2400-bps preamble a plausible signal. Placing the end
+        from the EOM is what lets back-to-back messages of different rates both be received
+        (M12)."""
+        if eom.found:
+            msg = self._message
+            length = data_phase_symbols(msg.mode, eom.payload_bits)
+            end = demod.symbol_time(msg.detection.data_start_symbol + length)
+        elif demod.lost and demod.end_symbol is not None:
             end = demod.symbol_time(demod.end_symbol)
         else:
             end = demod.position

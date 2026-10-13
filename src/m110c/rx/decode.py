@@ -21,6 +21,8 @@ Streaming: :meth:`process` accepts any number of symbols and returns the bits th
 settled; :meth:`finish` returns the rest. Memory is bounded by one interleaver block.
 """
 
+from collections import deque
+
 import numpy as np
 
 from .. import fec, scrambler, symbols
@@ -28,6 +30,10 @@ from ..interleave import Deinterleaver
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from . import demap
+
+# Frames (sets) remembered for snr_db_before: ten seconds of symbols, far more than the
+# demodulator runs ahead of the decoder (its one-second loss window, plus one block).
+RECENT_SYMBOLS = 10 * T.SYMBOL_RATE
 
 
 class DataDecoder:
@@ -44,6 +50,9 @@ class DataDecoder:
         self._viterbi = fec.ViterbiDecoder(traceback_depth, start_state=0) if mode.coded else None
         self._known_signal = 0.0  # accumulated |known (or decided) symbol|^2
         self._known_error = 0.0  # accumulated |received - known|^2
+        # The same per frame (or set), for the last few seconds only: (first data-phase
+        # symbol, signal, error). See snr_db_before.
+        self._recent: deque = deque()
         self.incomplete_symbols = 0  # set by finish(): symbols lost in a partial frame
         self.incomplete_block_bits = 0  # set by finish(): bits lost in a partial block
 
@@ -61,6 +70,26 @@ class DataDecoder:
         if self._known_error == 0.0:
             return None if self._known_signal == 0.0 else float("inf")
         return 10 * np.log10(self._known_signal / self._known_error)
+
+    def snr_db_before(self, end_symbol: int) -> float | None:
+        """:attr:`snr_db` counting only frames (sets) that start before data-phase symbol
+        ``end_symbol``. The demodulator runs ahead of the decoder, so by the time the EOM
+        says where a message ended, the decoder has also measured whatever followed it:
+        another transmission, read as this one, measures as noise."""
+        signal, error = self._known_signal, self._known_error
+        for start, s, e in self._recent:
+            if start >= end_symbol:
+                signal, error = signal - s, error - e
+        if error <= 0.0:
+            return None if signal <= 0.0 else float("inf")
+        return 10 * np.log10(signal / error)
+
+    def _record(self, start: int, signal: float, error: float) -> None:
+        self._known_signal += signal
+        self._known_error += error
+        self._recent.append((start, signal, error))
+        while self._recent and self._recent[0][0] < start - RECENT_SYMBOLS:
+            self._recent.popleft()
 
     def process(self, y: np.ndarray, noise_var: np.ndarray | None = None) -> np.ndarray:
         """Accept more data-phase symbols; return decoded bits that are now settled.
@@ -123,16 +152,22 @@ class DataDecoder:
         d1, d2 = self.mode.d1_d2
         d_value = {self.mode.frames_per_block - 2: d1, self.mode.frames_per_block - 1: d2}
         known = np.exp(1j * np.pi / 4 * symbols.probe_tribits(self.mode, d_value.get(position)))
-        self._known_signal += float(np.sum(np.abs(known) ** 2))
-        self._known_error += float(np.sum(np.abs(probe - known) ** 2))
+        self._record(
+            self._frames * self.mode.frame_symbols,
+            float(np.sum(np.abs(known) ** 2)),
+            float(np.sum(np.abs(probe - known) ** 2)),
+        )
         self._frames += 1
 
     def _soft_bits_75(self, y: np.ndarray, var: np.ndarray) -> np.ndarray:
         corr = demap.set_correlations(y, self.mode, self._sets)
         decided = demap.set_patterns(self.mode, self._sets, np.argmax(corr, axis=1))
         sets = y.reshape(decided.shape)
-        self._known_signal += float(np.sum(np.abs(decided) ** 2))
-        self._known_error += float(np.sum(np.abs(sets - decided) ** 2))
+        signal = np.sum(np.abs(decided) ** 2, axis=1)
+        error = np.sum(np.abs(sets - decided) ** 2, axis=1)
+        for i in range(len(corr)):
+            start = (self._sets + i) * T.TRIBITS_PER_75BPS_SET
+            self._record(start, float(signal[i]), float(error[i]))
         self._sets += len(corr)
         set_var = var.reshape(-1, T.TRIBITS_PER_75BPS_SET).mean(axis=1)
         return demap.soft_bits_75(corr, set_var)

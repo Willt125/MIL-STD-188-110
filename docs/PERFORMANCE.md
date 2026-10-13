@@ -290,3 +290,114 @@ BER 3e-5, each from one channel, against 1e-3). Clock offsets of ±900 and ±200
 still reported within 20 ppm, and short-interleave 2400 bps on the 2-ms, 5-Hz channel
 decodes 17 of 20 messages, as in M10.
 
+
+## M12: streams, garbage and back-to-back messages (2026-10-13)
+
+### Speed: BLAS threads
+
+The equaliser solves thousands of small (about 40 × 40) linear systems per second. With
+OpenBLAS's default threads, each wakes several threads for a few microseconds of work. On a
+loaded 4-core machine the receiver then ran **3.5–4× slower than real time** (60 s of 2400S
+took 232 s of CPU). M10 had set `OPENBLAS_NUM_THREADS=1` in the package's `__init__`, but an
+environment variable only works if it is set before NumPy is first imported, and a program
+that imports NumPy before `m110c` (the normal order) got the slow receiver. The command-line
+tools were not affected. The limit is now applied around each receiver call with
+`threadpoolctl` (a new dependency; about 6 µs per call), and the caller's own setting is
+restored afterwards. A test checks that the solves run on one thread while the caller allows
+two.
+
+One CPU core, 60 s of signal fed in 0.1-s chunks, NumPy imported first:
+
+| Mode | CPU per second of signal |
+|------|--------------------------|
+| 4800 | 0.29 s |
+| 2400S / 2400L | 0.33 / 0.30 s |
+| 600S | 0.28 s |
+| 75S / 75L | 0.12 / 0.10 s |
+
+`m110c-tx | m110c-chan --preset "2 fading 2 ms 1 Hz" --snr 18 | m110c-rx` on 65 s of 2400L
+(18000 random bytes) took 24 s of wall time, and the output was identical to the input.
+
+### Latency in a live stream
+
+When does each byte come out, relative to when it was on the air? (Input in 0.1-s chunks;
+20 s of data per mode.)
+
+| Mode | Median | Maximum |
+|------|--------|---------|
+| 4800 | 1.1 s | 1.2 s |
+| 2400S | 1.5 s | 1.8 s |
+| 2400L | 3.7 s | 6.0 s |
+| 600S | 2.0 s | 2.3 s |
+| 75S | 5.9 s | 6.9 s |
+| 75L | 7.8 s | 10.6 s |
+
+Three things add up: the deinterleaver (a byte waits for the end of its interleaver block:
+0.6 s short, 4.8 s long), the demodulator's one-second loss window (it holds output back
+while it judges whether the signal is gone, so that a lost signal's last units are not
+decoded as data), and the end-of-message check (INT-018), which holds back the 32 + 144 + 31
+bits it needs to confirm an EOM against its flush: 0.09 s at 2400 bps, 2.8 s at 75 bps.
+All three are inherent to the design; none was changed.
+
+### Memory over long streams
+
+Ten minutes of noise, a 200-s 2400L message, noise, a 200-s 75S message and noise ran in
+flat memory (about 20 MB traced by Python), after two fixes:
+
+- Every equaliser unit's SNR was kept for the whole message: about 2.5 kB a second, 9 MB an
+  hour. Only the most recent 1000 are kept now (they are a debugging aid; nothing reads
+  them).
+- At each message end a new preamble search was built while the old one was still
+  referenced. Each holds about 17 MB of precomputed correlation FFTs (33 frequency bins × 4
+  waveforms × 8192 points), so the peak briefly doubled that. The old one is now released
+  first.
+
+Both are covered by tests (the second by the slow 10-minute test).
+
+### Garbage input
+
+Random bytes read as cf32 contain NaN, infinities and values up to 3.4e38. Hypothesis
+fuzzing of the receiver (arbitrary bytes, random chunking, corrupt samples inside a real
+transmission, truncation anywhere), plus 300 longer random cases, found:
+
+- NaN samples raised a NumPy warning when cf32 was decoded; non-finite samples now become
+  silence at the receiver's input. A message with NaN and infinite samples inside it still
+  decodes.
+- One 3.4e38 sample could overflow the search metric (a warning). That block's metric is
+  meaningless anyway: the preamble segment sharing it is missed and a later one is found.
+- A WAV header with no channels, or a 0-Hz sample rate (which passed the multiple-of-2400
+  check), ended in a traceback; it is now a clean error.
+
+After the fixes: no exception or warning in any case, and a message between two blocks of
+random garbage was found 100 times in 100. The receiver works for any input amplitude from
+1e-15 to 1e9 (a scale of 1e-18 and below fails; cf32 from a real source is never that
+small).
+
+### Back-to-back messages at different rates
+
+With no gap between two transmissions, one of them at 75 bps and the other not, the second
+was never received. The end of a message was taken from where the demodulator declared loss
+of signal; a 75-bps demodulator finds a following 2400-bps preamble a plausible signal (and
+the other way round), so loss came up to a second late, and the search for the next message
+started past most of its 0.6-s preamble. The end is now computed from the EOM: the number of
+payload bits before it gives the length of the data phase by the framer's arithmetic
+(`data_phase_symbols`, tested against the transmitter for every mode and length). The same
+end corrects the reported SNR, which had included the following transmission as noise (a
+clean 2400S message reported −3.8 dB; now 61 dB).
+
+A second fault showed up with it: when the input ended while a message was in progress,
+`finish()` closed that message but never searched the samples after it, so a short second
+transmission at the very end of a file was lost. Every pairing of 2400S, 75S, 4800, 1200L,
+300S and 75L now decodes, with the input ending at once and with silence after it (72 cases).
+
+### Real recordings
+
+All 20 local recordings decode exactly as with the M11 receiver (the same messages, modes,
+byte counts and EOMs, compared file by file). They are now acceptance tests
+(`tests/acceptance/`, 17 cases), run when `M110C_RECORDINGS` names a directory holding them
+at 9600 S/s; they pass in about two minutes.
+
+### Diagnostics
+
+`m110c-rx` now prints a line when each message's preamble is found (mode, time, carrier),
+before the summary when it ends, so a live listener knows something is being received.

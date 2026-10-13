@@ -55,7 +55,8 @@ def decode_samples(data: bytes, fmt: str) -> np.ndarray:
     For WAV, pass the sample data only (see :func:`read_wav`).
     """
     if fmt == "cf32":
-        iq = np.frombuffer(data, dtype="<f4").astype(float)
+        with np.errstate(invalid="ignore"):  # NaNs in the input are the receiver's to handle
+            iq = np.frombuffer(data, dtype="<f4").astype(float)
         return iq[0::2] + 1j * iq[1::2]
     if fmt == "cs16":
         iq = np.frombuffer(data, dtype="<i2").astype(float) / 32767.0
@@ -169,3 +170,5 @@ def read_wav_header(stream) -> tuple[int, int]:
             bits = struct.unpack("<H", body[14:16])[0]
             if fmt_tag not in (1, 0xFFFE) or bits != 16:
                 raise ValueError("only 16-bit PCM WAV is supported")
+            if channels == 0 or sample_rate == 0:
+                raise ValueError("WAV header gives no channels or a zero sample rate")

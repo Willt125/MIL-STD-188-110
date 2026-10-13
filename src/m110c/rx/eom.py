@@ -51,6 +51,8 @@ class EomDetector:
         self.confirm_bits = confirm_bits
         self.max_confirm_ones = max_confirm_ones
         self.found = False  # True once the EOM has been accepted
+        self.payload_bits = None  # once found: how many payload bits came before the EOM
+        self._released = 0  # payload bits already returned
         self._buffer = np.zeros(0, dtype=np.uint8)
 
     @property
@@ -76,6 +78,7 @@ class EomDetector:
         if p is not None:
             return self._accept(p)
         out, self._buffer = self._buffer[:checkable], self._buffer[checkable:]
+        self._released += out.size
         return out
 
     def finish(self) -> np.ndarray:
@@ -90,6 +93,7 @@ class EomDetector:
         if p is not None:
             return self._accept(p)
         out, self._buffer = self._buffer, np.zeros(0, dtype=np.uint8)
+        self._released += out.size
         return out
 
     def _find_eom(self, n_starts: int, allow_short: bool) -> int | None:
@@ -134,6 +138,7 @@ class EomDetector:
 
     def _accept(self, p: int) -> np.ndarray:
         self.found = True
+        self.payload_bits = self._released + p
         out = self._buffer[:p]
         self._buffer = np.zeros(0, dtype=np.uint8)
         return out
