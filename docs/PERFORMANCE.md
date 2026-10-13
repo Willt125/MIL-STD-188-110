@@ -460,13 +460,72 @@ Clock offsets of ±900 and ±2000 ppm are followed as before (75S and 2400 bps, 
 fading, one-minute messages: the same messages decode, clocks reported within 20 ppm), the
 real recordings decode as before, and the message that failed is a slow test.
 
-### Remaining limit: the 75-bps row of Table XVI is not met
+### The rest of the 75-bps failures
 
-The full conformance run (CONFORMANCE.md) lost 3 of 223 one-minute 75L messages at the Table
-XVI point (2 dB, 5 ms, 5 Hz): BER 7.7e-3 against 1e-5. Every other row meets its requirement
-or is consistent with it. The period no longer runs away in these failures (it stays within
-±0.1%). Instead, in a deep fade, the sampling phase drifts by tens of samples within a few
-seconds, and the alignment then jumps by 15–20 symbols in one step: further than any real
-path on this channel (the two are 12 symbols apart), so a phantom path like the one found in
-M11. Losing lock is a rate per minute (about one per 75 minutes of signal here), so short
-messages rarely show it. Not resolved in this milestone.
+The full conformance run after the period fix still lost 3 of 223 one-minute 75L messages
+at the Table XVI point. Traced one by one, they had two other causes:
+
+- **Phantom paths.** In a deep fade the sampling phase drifted by tens of samples, and the
+  alignment then jumped 15–20 symbols in one step, further than any real path (the two are
+  12 symbols apart): the decision-directed delay profile, built from symbols decided while
+  the signal was mostly noise, showed a path that was not there.
+- **A misread count.** One message failed from its first byte with perfect timing: the
+  preamble was found on its second segment, whose count was read as 23 instead of 22 in a
+  fade, and the next two segments, which should have contradicted it (M11), were faded
+  too. The data phase was placed one segment (0.2 s) late.
+
+**Set-correlation check.** At 75 bps every 32-symbol set is one of four known patterns,
+under a scrambler tied to the symbol count, which the receiver never loses. Read at the right
+delay a set correlates strongly with one pattern; read at a wrong one, even a whole set away,
+the scrambling no longer matches and it correlates with none. So correlating the sets at
+every tap gives a delay profile that needs no decisions and no channel estimate. It is
+coarse (paths stand about 5 dB above the floor of wrongly-timed sets at 2 dB SNR, where the
+decision-directed profile shows 15 dB on average), too coarse to choose the alignment with:
+used that way it lost messages that had decoded. Used as a check, it works: a realignment
+must land where it sees a path, within 6 dB of its strongest. (This is the "set boundary
+sync" of the M11 plan. Exceptional sets are not needed for it: they would say which set of
+the interleaver block is which, and the symbol count already does.)
+
+**Counts confirmed before use.** A long-preamble count that later segments can still check
+is now only used once one of them confirms it; the search moves on to the next segment
+otherwise. A long preamble has 24 segments, so this costs nothing but 0.2 s per rejected
+segment; only its last two, and short preambles, go unchecked.
+
+Four changes were measured on fresh channels (one-minute messages, 5 ms, 5 Hz, 0 dB, clean
+of 48), all on, then each removed:
+
+| | 75L | 75S |
+|-|-----|-----|
+| none of the four | 26 | 18 |
+| all four | 45 | 11 |
+| without the set-correlation check | 35 | 12 |
+| without starting the data phase from the preamble's clock fit | 41 | 26 |
+| without the fade gate in the preamble too | 44 | 11 |
+| without confirmed counts | 44 | 11 |
+
+Starting the data phase from the clock fit hurt 75S badly (a 0.6-s preamble is too short
+for a good fit) and was dropped; so was the fade gate in the preamble (no gain at 0 dB, and
+at the Table XVI point below one new failure). At the Table XVI point, on 223 fresh
+channels (one-minute 75L messages, 2 dB):
+
+| | Clean of 223 |
+|-|-------------:|
+| M13 period fix only | 220 |
+| plus the set-correlation check | 220 (the same three: misread counts) |
+| plus confirmed counts | **223** |
+| plus the fade gate in the preamble | 222 |
+
+The set-correlation check and confirmed counts were kept. Both failures traced above are
+slow tests, as is the first one.
+
+### Conformance
+
+With both, the conformance run meets every row of Table XVI but one, 600 bps, which is
+consistent with it: 5 bit errors in a million, a measured BER of 5e-6 whose 95% bound lands
+on the 1e-5 requirement. 75 bps: no errors in a million bits over 223 one-minute messages.
+That run's channels include the three diagnosed above, so on its own it is partly the data
+the fixes were chosen on; the 223 fresh channels above are the independent check.
+
+Losing lock remains how 75-bps messages fail below the Table XVI SNR, at a rate per minute
+(75L at 0 dB: 45 of 48 one-minute messages clean). Recovering lock in the data phase, with
+no probes, is not attempted.

@@ -148,16 +148,22 @@ def fmt_ber(x: float) -> str:
 
 
 def git_describe() -> str:
+    """The commit, marked "+changes" if the code (src/, tools/) differs from it. Edits to
+    the docs cannot change the results, so they do not count."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
-        root = os.path.dirname(os.path.abspath(__file__))
-        return subprocess.run(
-            ["git", "-C", root, "describe", "--always", "--dirty"],
+        commit = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
+        changed = subprocess.run(
+            ["git", "-C", root, "diff", "--quiet", "HEAD", "--", "src", "tools"]
+        )
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+    return commit + ("+changes" if changed.returncode else "")
 
 
 def main(argv=None) -> int:
