@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "m110c"
-version = "0.0.1"
+version = "1.0.0"
 description = "Readable, educational encoder/decoder for the MIL-STD-188-110C serial-tone HF modem"
 readme = "README.md"
 license = "MIT"
