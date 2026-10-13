@@ -257,11 +257,18 @@ remain the check against reality.
 spread-dependent rate, then the ×5 `X5IntrpFIRCoef` stages), and substitute it for
 `m110c.channel.watterson.FadingGain` (same `next(n)` interface; per-path power as passed).
 
-## Limitations
+## As acceptance tests (M12, 2026-10-13)
+
+The results above are now checked by `tests/acceptance/test_recordings.py`: exact text for
+the fox, 150S/L and plain-text files, and mode, byte count and EOM for the binary payloads,
+in 8N1 framing. The tests run only when `M110C_RECORDINGS` names a directory holding the
+recordings as 9600-S/s WAV files under their original names; the recordings themselves stay
+outside the repository.
+
 
 - The exploratory demodulator is not committed; the real receiver (`m110c-rx`, above) has
-  superseded it. The recordings remain outside the repository, so these runs are manual
-  acceptance checks, not CI tests.
+  superseded it. The recordings remain outside the repository, so the acceptance tests run
+  only where they are available locally, not in CI.
 - Only one recording (the fox) has known plaintext. For the others, "EOM found" proves that the
   chain inverts correctly, not that every bit is right. Readable text proves it for those files.
 - Zero-interleave flush padding (INT-013, no interleaver) and 75 bps with zero interleave were

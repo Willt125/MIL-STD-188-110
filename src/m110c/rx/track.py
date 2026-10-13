@@ -47,6 +47,7 @@ from collections import deque
 import numpy as np
 
 from .. import scrambler, symbols
+from .._blas import single_threaded_blas
 from ..modulate import rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
@@ -54,6 +55,7 @@ from . import demap
 from .acquire import SLOT_TRIBITS, Detection
 
 LOSS_UNITS = 3  # consecutive bad units that mean "signal lost"
+UNIT_HISTORY = 1000  # unit SNRs kept for diagnostics
 # A unit is bad below this SNR on its known symbols. Noise alone measures about 1/n
 # (-12 dB for a 16-symbol probe, -15 dB for a 32-symbol slot), while the weakest
 # decodable signal (75 bps at -6 dB in 3 kHz) is about -5 dB per symbol.
@@ -120,7 +122,9 @@ class TrackingDemodulator:
         self._frames = 0
         self._sets = 0
         # Quality and loss handling.
-        self.unit_snr_db: list[float] = []
+        # Each unit's SNR in dB, for diagnostics: only the most recent are kept, so that
+        # memory stays bounded however long the message.
+        self.unit_snr_db: deque = deque(maxlen=UNIT_HISTORY)
         self.lost = False
         self._bad_run = 0
         self._held: deque[np.ndarray] = deque()
@@ -146,6 +150,7 @@ class TrackingDemodulator:
         """Global sample index the demodulator has reached (for resuming a search)."""
         return int(self.t_next)
 
+    @single_threaded_blas
     def process(self, samples: np.ndarray):
         """Accept raw samples; return the normalised data-phase symbols that are settled,
         and the noise variance of each (``(symbols, noise_var)``)."""
@@ -162,6 +167,7 @@ class TrackingDemodulator:
             self._trim()
         return _join(out)
 
+    @single_threaded_blas
     def finish(self):
         """End of input: release the held-back symbols, except trailing bad units."""
         out = self._release_good()

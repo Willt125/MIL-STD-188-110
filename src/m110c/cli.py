@@ -221,6 +221,19 @@ def rx_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _offset(carrier_hz: float) -> str:
+    """Offset from the nominal carrier, e.g. "+1.2"; never "-0.0"."""
+    return f"{round(carrier_hz - T.CARRIER_HZ, 1) + 0.0:+.1f}"
+
+
+def _describe_start(msg, sample_rate) -> str:
+    det = msg.detection
+    return (
+        f"m110c-rx: {msg.mode} preamble at {max(det.segment_start, 0) / sample_rate:.2f} s, "
+        f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), receiving"
+    )
+
+
 def _describe(msg, sample_rate) -> str:
     det = msg.detection
     if msg.eom_found:
@@ -232,7 +245,7 @@ def _describe(msg, sample_rate) -> str:
     snr = "n/a" if msg.snr_db is None else f"{msg.snr_db:.1f} dB"
     return (
         f"m110c-rx: {msg.mode} at {max(det.segment_start, 0) / sample_rate:.2f} s, "
-        f"carrier {det.carrier_hz:.1f} Hz ({det.carrier_hz - T.CARRIER_HZ:+.1f}), "
+        f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
         f"clock {msg.clock_ppm:+.0f} ppm, SNR {snr}, "
         f"{msg.n_bytes} bytes, {end}"
     )
@@ -274,7 +287,7 @@ def rx_main(argv=None) -> int:
         )
         frame = io.bytes_per_sample(args.format) * channels
         leftover = b""
-        reported = 0
+        reported, announced = 0, set()
         for piece in _read_pieces(infile):
             data = leftover + piece
             usable = len(data) - len(data) % frame
@@ -284,18 +297,23 @@ def rx_main(argv=None) -> int:
                 samples = samples.reshape(-1, channels).mean(axis=1)
             sink.write(receiver.process(samples))
             sink.flush()
-            reported = _report(receiver, reported, sample_rate, args.quiet)
+            reported = _report(receiver, reported, announced, sample_rate, args.quiet)
         sink.write(receiver.finish())
-        _report(receiver, reported, sample_rate, args.quiet)
+        _report(receiver, reported, announced, sample_rate, args.quiet)
     if not receiver.messages and not args.quiet:
         print("m110c-rx: no transmission found", file=sys.stderr)
     return 0
 
 
-def _report(receiver, reported: int, sample_rate: int, quiet: bool) -> int:
-    for msg in receiver.messages[reported:]:
-        if not quiet:
-            print(_describe(msg, sample_rate), file=sys.stderr)
+def _report(receiver, reported: int, announced: set, sample_rate: int, quiet: bool) -> int:
+    """Print a line when each message starts and a summary when it ends (once each)."""
+    current = [] if receiver.receiving is None else [(receiver.receiving, False)]
+    for msg, ended in [(m, True) for m in receiver.messages[reported:]] + current:
+        if not quiet and id(msg) not in announced:
+            print(_describe_start(msg, sample_rate), file=sys.stderr, flush=True)
+        announced.add(id(msg))  # (messages stay referenced, so ids are not reused)
+        if ended and not quiet:
+            print(_describe(msg, sample_rate), file=sys.stderr, flush=True)
     return len(receiver.messages)
 
 

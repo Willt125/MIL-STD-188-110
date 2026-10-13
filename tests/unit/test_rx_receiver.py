@@ -223,3 +223,130 @@ def test_cubic_interpolation_of_a_band_limited_signal():
     u = np.exp(2j * np.pi * f * n)
     t = np.linspace(5, 390, 1000)
     assert np.max(np.abs(interpolate(u, t) - np.exp(2j * np.pi * f * t))) < 0.025
+
+
+# --- Resources (M12) -----------------------------------------------------------------------
+
+
+def test_linear_algebra_runs_on_one_blas_thread_whatever_the_caller_set(monkeypatch):
+    """The equaliser's thousands of small solves ran 10x slower on a multithreaded BLAS
+    (docs/PERFORMANCE.md, M12). The limit must hold inside the receiver even when the
+    caller's process allows more threads, and the caller's setting must come back after."""
+    from threadpoolctl import ThreadpoolController, threadpool_limits
+
+    import m110c.rx.equalize as E
+
+    seen = []
+    original = E.estimate_channel
+
+    def spy(*args, **kwargs):
+        seen.append(
+            {i["num_threads"] for i in ThreadpoolController().select(user_api="blas").info()}
+        )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(E, "estimate_channel", spy)
+    blas = ThreadpoolController().select(user_api="blas")
+    if not blas.info():
+        pytest.skip("no BLAS library loaded")
+    with threadpool_limits(limits=2, user_api="blas"):
+        out, _ = receive(burst(mode(2400, "short")))
+        after = {i["num_threads"] for i in ThreadpoolController().select(user_api="blas").info()}
+    assert out == MSG
+    assert seen and all(s == {1} for s in seen)
+    assert after == {2}
+
+
+def _traced_memory(x, at_seconds, chunk=9600):
+    """Run a receiver over ``x`` in 1-s chunks; tracemalloc's current bytes at each mark."""
+    import tracemalloc
+
+    marks = {}
+    tracemalloc.start()
+    try:
+        rx = Receiver()
+        for i, k in enumerate(range(0, x.size, chunk)):
+            rx.process(x[k : k + chunk])
+            if i + 1 in at_seconds:
+                marks[i + 1] = tracemalloc.get_traced_memory()
+        rx.finish()
+    finally:
+        tracemalloc.stop()
+    return rx, marks
+
+
+def test_memory_does_not_grow_during_a_long_message():
+    """Every unit's SNR used to be kept for the whole message: about 2.5 kB a second at
+    75 bps, 200 kB over this message, 9 MB an hour. Only the most recent are kept now."""
+    msg = bytes(np.random.default_rng(3).integers(0, 256, 1000, dtype=np.uint8))
+    x = burst(mode(75, "short"), msg)
+    rx, marks = _traced_memory(x, (20, 100))
+    assert rx.messages and rx.messages[0].n_bytes == len(msg)
+    assert marks[100][0] - marks[20][0] < 100e3
+
+
+@pytest.mark.slow
+def test_ten_minutes_of_mixed_input_in_bounded_memory():
+    """Noise, a long 2400-bps message, noise, a long 75-bps message, noise: 10 minutes.
+    After the first message has started, neither the current nor the peak memory grows."""
+    rng = np.random.default_rng(4)
+
+    def noise(seconds):
+        return 0.1 * (
+            rng.standard_normal(9600 * seconds) + 1j * rng.standard_normal(9600 * seconds)
+        )
+
+    a = bytes(rng.integers(0, 256, 60000, dtype=np.uint8))  # about 200 s at 2400 bps
+    b = bytes(rng.integers(0, 256, 1800, dtype=np.uint8))  # about 200 s at 75 bps
+    x = np.concatenate(
+        [
+            noise(60),
+            burst(mode(2400, "long"), a),
+            noise(30),
+            burst(mode(75, "short"), b),
+            noise(120),
+        ]
+    )
+    assert x.size >= 600 * 9600
+    rx, marks = _traced_memory(x, (120, 300, x.size // 9600 - 1))
+    assert [m.n_bytes for m in rx.messages] == [len(a), len(b)]
+    first, *later = sorted(marks)
+    for t in later:
+        assert marks[t][0] < marks[first][0] + 200e3  # current
+        assert marks[t][1] < marks[first][1] + 2e6  # peak (a 2400L interleaver block in flight)
+
+
+# --- Back to back at different rates (M12) -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        (mode(2400, "short"), mode(75, "short")),
+        (mode(75, "short"), mode(2400, "short")),
+        (mode(75, "short"), mode(4800)),
+        (mode(4800), mode(75, "short")),
+        (mode(75, "long"), mode(1200, "long")),
+    ],
+    ids=str,
+)
+@pytest.mark.parametrize("tail", [0, 9600], ids=["input ends", "silence after"])
+def test_back_to_back_at_different_rates(first, second, tail):
+    """With no gap, a 75-bps demodulator takes the next preamble for more signal (and the
+    other way round), so loss of signal came up to a second late and the search for the
+    next message started past most of its preamble. The end now comes from the EOM. When
+    the input ended soon after the second message, it was never searched for at all."""
+    a = burst(first, b"first", lead=500, tail=0)
+    b = burst(second, b"second", lead=0, tail=tail)
+    out, rx = receive(np.concatenate([a, b]))
+    assert out == b"firstsecond"
+    assert [m.mode for m in rx.messages] == [first, second]
+    # The SNR covers each message only: what followed used to count as noise (-4 dB).
+    assert all(m.snr_db > 40 for m in rx.messages)
+
+
+def test_message_end_is_placed_from_the_eom():
+    a = burst(mode(2400, "short"), b"first", lead=500, tail=0)
+    b = burst(mode(75, "short"), b"second", lead=0)
+    _, rx = receive(np.concatenate([a, b]))
+    assert abs(rx.messages[0].end_sample - a.size) < 100  # within the pulse-shaping tail

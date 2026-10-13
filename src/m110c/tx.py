@@ -153,6 +153,21 @@ class Transmitter:
         return scrambler.scramble(tribits, seq)
 
 
+def data_phase_symbols(mode: ModeSpec, n_user_bits: int) -> int:
+    """Channel symbols that the data, EOM and flush phases of a message take, after the
+    preamble: the framer's arithmetic, without encoding anything. The receiver uses it to
+    place the end of a message whose EOM it has found."""
+    per_input_bit = 2 * mode.repetitions if mode.coded else 1  # rate-1/2 code, repeated
+    channel_bits = (n_user_bits + T.EOM_BITS + T.CODER_FLUSH_BITS) * per_input_bit
+    if mode.has_interleaver:  # flushed to the end of the interleaver block
+        channel_bits = -(-channel_bits // mode.interleaver_bits) * mode.interleaver_bits
+    if mode.is_75bps:  # one 32-tribit set per channel symbol
+        sets = -(-channel_bits // mode.bits_per_channel_symbol)
+        return sets * mode.tribits_per_channel_symbol
+    frames = -(-channel_bits // mode.channel_bits_per_frame)  # the last frame completed
+    return frames * mode.frame_symbols
+
+
 def transmit(user_bits: np.ndarray, mode: ModeSpec) -> np.ndarray:
     """One-shot: the complete tribit stream for a message given as bits."""
     tx = Transmitter(mode)

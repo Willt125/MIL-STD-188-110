@@ -30,7 +30,8 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M9 Watterson HF channel simulator (`m110c-chan`) | done |
 | M10 Equalisation and fading-channel tracking | done |
 | M11 75-bps refinements, acquisition in fades | done |
-| M12 Hardening: streaming CLI, fuzzing, long streams | next |
+| M12 Hardening: streaming CLI, fuzzing, long streams | done |
+| M13 Conformance report and documentation (v1.0) | next |
 
 ## Transmitting
 
@@ -58,7 +59,16 @@ m110c-rx --format wav --async 8N1 recording.wav                    # e.g. a real
 The receiver finds each transmission by itself: it searches ±400 Hz around the 1800-Hz
 carrier, reads the mode from the preamble, follows timing (±0.2% clock error) and carrier,
 estimates the multipath channel at every probe and equalises it, and stops at each
-end-of-message marker before searching for the next. A report per message goes to stderr.
+end-of-message marker before searching for the next. Two lines per message go to stderr:
+
+```text
+m110c-rx: 2400L preamble at 0.00 s, carrier 1800.3 Hz (+0.3), receiving
+m110c-rx: 2400L at 0.00 s, carrier 1800.3 Hz (+0.3), clock +1 ppm, SNR 13.3 dB, 18000 bytes, EOM found
+```
+
+It works as a live stream: bytes come out 1–2 s after they were on the air (up to 6 s with
+the long interleaver, 6–11 s at 75 bps, where the deinterleaver and the end-of-message check
+dominate), using 0.1–0.4 s of one CPU core per second of signal (docs/PERFORMANCE.md, M12).
 Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
 resample other rates first, e.g. `sox in.wav -r 9600 out.wav`), `--no-equalizer` (the simpler
