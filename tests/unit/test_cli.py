@@ -171,3 +171,18 @@ def test_standard_output_is_not_closed(capsysbinary):
     first = capsysbinary.readouterr().out
     assert tx_main(["-q", "-r", "2400", "/dev/null"]) == 0
     assert capsysbinary.readouterr().out == first and len(first) > 0
+
+
+@pytest.mark.parametrize(
+    "args", [["--voice", "-r", "1200"], ["--voice", "-i", "long"], ["--voice", "--async", "8N1"]]
+)
+def test_int_019_voice_needs_2400_short_and_sync(args):
+    out = run_tx(*args, stdin=MESSAGE)
+    assert out.returncode == 2 and b"m110c-tx:" in out.stderr
+
+
+def test_int_019_voice_matches_the_library():
+    out = run_tx("--voice", stdin=MESSAGE)
+    assert out.returncode == 0, out.stderr
+    expected = modulate(transmit_bytes(MESSAGE, mode(2400, "short", voice=True)))
+    assert out.stdout == io.encode_samples(expected, "cf32")[0]

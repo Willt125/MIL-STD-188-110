@@ -67,6 +67,7 @@ class Receiver:
         invert_spectrum: bool = False,
         threshold: float | None = None,
         equalize: bool = True,
+        voice: bool = False,
     ):
         self.sample_rate = sample_rate
         self.carrier_hz = carrier_hz
@@ -77,6 +78,9 @@ class Receiver:
         self.invert_spectrum = invert_spectrum
         self.threshold = threshold
         self.equalize = equalize  # False: the M8 single-gain tracker (for comparison)
+        # Also receive 2400 bps digital voice (INT-019). Its payload is a vocoder's bit
+        # stream, so it is always delivered as raw synchronous bits, never async-deframed.
+        self.voice = voice
         self.messages: list[Message] = []
         self._message: Message | None = None
         self._raw = np.zeros(0, dtype=complex)  # recent input
@@ -158,6 +162,7 @@ class Receiver:
             self.carrier_hz,
             self.max_offset_hz,
             zero_interleave=self.zero_interleave,
+            voice=self.voice,
             **options,
         )
         # The search counts samples from the position it starts at.
@@ -177,7 +182,7 @@ class Receiver:
         self._demod = demodulator(m, detection, self.sample_rate, start_index=self._demod_start)
         self._decoder = DataDecoder(m)
         self._eom = EomDetector()
-        self._async = AsyncDecoder(self.async_format) if self.async_format else None
+        self._async = AsyncDecoder(self.async_format) if self.async_format and not m.voice else None
         self._bit_pending = np.zeros(0, dtype=np.uint8)
 
     def _feed_message(self, samples) -> bytes:

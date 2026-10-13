@@ -234,7 +234,7 @@ TABLE_XI = {
     (75, "long"): (5, 5),
 }
 
-#: Table XI: 2400 bps digital voice, short interleave. Not implemented (INT-019).
+#: Table XI: 2400 bps digital voice, short interleave: the ``2400V`` mode (INT-019).
 TABLE_XI_DIGITAL_VOICE = (7, 7)
 #: Table XI note: "The D1, D2 combinations 5,6 and 5,7 are reserved for application-specific use."
 TABLE_XI_APPLICATION_SPECIFIC = ((5, 6), (5, 7))

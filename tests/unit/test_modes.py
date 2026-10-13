@@ -105,7 +105,7 @@ def test_d1_d2_round_trip(m):
 
 
 def test_int_019_unimplemented_designators_are_rejected():
-    assert mode_from_d1_d2(*T.TABLE_XI_DIGITAL_VOICE) is None
+    assert mode_from_d1_d2(*T.TABLE_XI_DIGITAL_VOICE) is None  # unless voice is asked for
     for pair in T.TABLE_XI_APPLICATION_SPECIFIC:
         assert mode_from_d1_d2(*pair) is None
 
@@ -137,3 +137,51 @@ def test_invalid_modes_raise(rate, interleave):
 def test_int_022_mode_factory_normalises_4800():
     """INT-022: 4800 bps is represented as zero interleave."""
     assert mode(4800, "long") == ModeSpec(4800, "zero")
+
+
+# --- INT-019: 2400 bps digital voice -------------------------------------------------
+
+
+VOICE = mode(2400, "short", voice=True)
+
+
+def test_int_019_digital_voice_is_2400s_with_the_voice_designators():
+    """Measured on a real recording (VALIDATION.md): the voice data phase is the 2400S
+    chain, with D1/D2 = 7,7 in the preamble and in the D probes."""
+    data = mode(2400, "short")
+    assert VOICE.name == "2400V" and str(VOICE) == "2400V"
+    assert VOICE.d1_d2 == T.TABLE_XI_DIGITAL_VOICE == (7, 7)
+    for attribute in (
+        "coded",
+        "repetitions",
+        "channel_bit_rate",
+        "bits_per_channel_symbol",
+        "unknown_per_frame",
+        "known_per_frame",
+        "interleaver_bits",
+        "block_symbols",
+        "frames_per_block",
+        "preamble_segments",
+        "sync_setting",
+    ):
+        assert getattr(VOICE, attribute) == getattr(data, attribute), attribute
+    assert VOICE != data
+
+
+def test_int_019_digital_voice_is_received_only_when_asked_for():
+    assert mode_from_d1_d2(7, 7, voice=True) == VOICE
+    assert mode_from_d1_d2(6, 4, voice=True) == mode(2400, "short")  # data is unaffected
+
+
+def test_int_019_digital_voice_is_not_a_data_mode():
+    assert VOICE not in MODES
+
+
+@pytest.mark.parametrize(
+    "rate, interleave", [(1200, "short"), (2400, "long"), (2400, "zero"), (4800, "zero")]
+)
+def test_int_019_digital_voice_exists_only_at_2400_short(rate, interleave):
+    """Table XI: voice has a short-interleave pair only; the long column is "reserved".
+    The recording's code check rejects zero interleave (VALIDATION.md)."""
+    with pytest.raises(ValueError, match="INT-019"):
+        mode(rate, interleave, voice=True)

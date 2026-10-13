@@ -13,6 +13,7 @@ together pin down every bit (a wrong bit almost always breaks the EOM or the cou
 import os
 import pathlib
 
+import numpy as np
 import pytest
 
 from m110c import io
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 FOX = b"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789"
 
 
-def receive(name):
+def load(name):
     path = pathlib.Path(ROOT) / name
     if not path.is_file():
         pytest.skip(f"{name} not present")
@@ -37,9 +38,27 @@ def receive(name):
     x = io.decode_samples(data[: len(data) - len(data) % (2 * channels)], "wav")
     if channels > 1:
         x = x.reshape(-1, channels).mean(axis=1)
-    rx = Receiver(sample_rate=rate, async_format=AsyncFormat.parse("8N1"))
-    out = rx.process(x) + rx.finish()
+    return rate, x
+
+
+def receive(name, x=None, **options):
+    rate, samples = load(name)
+    rx = Receiver(sample_rate=rate, async_format=AsyncFormat.parse("8N1"), **options)
+    out = rx.process(samples if x is None else x) + rx.finish()
     return out, [(str(m.mode), m.n_bytes, m.eom_found) for m in rx.messages]
+
+
+def stretch(x, ratio, half=32):
+    """Resample by ``ratio`` input samples per output sample (Hann-windowed sinc)."""
+    t = np.arange(int((x.size - 1) / ratio)) * ratio
+    k0 = np.floor(t).astype(int)
+    out = np.zeros(t.size)
+    for j in range(-half + 1, half + 1):
+        k = k0 + j
+        ok = (k >= 0) & (k < x.size)
+        d = t[ok] - k[ok]
+        out[ok] += x.real[k[ok]] * np.sinc(d) * (0.5 + 0.5 * np.cos(np.pi * d / half))
+    return out
 
 
 @pytest.mark.parametrize(
@@ -106,7 +125,43 @@ def test_a_contact_that_moves_from_600_to_1200_bps():
     assert b"DE NC97 OK 1200 K" in out
 
 
+VOICE = "MIL188-110A_DIGI-VX.wav"
+# This recording runs 0.47% slow: its preamble segments are 1929 samples apart, not 1920
+# (VALIDATION.md). Undone here; no working sound card is that far off.
+VOICE_CLOCK = 1929 / 1920
+
+
 def test_digital_voice_is_not_taken_for_data():
-    """D1/D2 = 7,7 (digital voice) is not implemented (INT-019)."""
-    _, messages = receive("MIL188-110A_DIGI-VX.wav")
+    """INT-019: by default a 7,7 preamble is ignored, even where it is perfectly readable."""
+    _, x = load(VOICE)
+    _, messages = receive(VOICE, stretch(x, VOICE_CLOCK))
     assert messages == []
+
+
+def test_digital_voice_is_the_2400s_chain():
+    """INT-019, measured: received as 2400S with 7,7 in the preamble and the D probes, the
+    voice transmission decodes to 9056 bits (1132 bytes) and ends with the EOM. The output
+    is raw bits, not 8N1 characters, though the receiver was asked for 8N1."""
+    _, x = load(VOICE)
+    out, messages = receive(VOICE, stretch(x, VOICE_CLOCK), voice=True)
+    assert messages == [("2400V", 1132, True)]
+    assert len(out) == 1132
+
+
+def test_digital_voice_payload_is_not_clear_stanag_4198():
+    """STANAG 4198 (LPC-10) frames are 54 bits; bit 54 alternates 1, 0, and the 7-bit
+    pitch word (bits 4, 9, 15, 27, 31, 42, 47) has Hamming weight 0, 3, 4 or 7 (Annex C,
+    Table 4). This payload shows neither at any frame offset: about 0.5 and 0.56, as
+    random bits would. Consistent with encrypted voice; recorded so the finding can be
+    rerun."""
+    _, x = load(VOICE)
+    out, _ = receive(VOICE, stretch(x, VOICE_CLOCK), voice=True)
+    bits = np.unpackbits(np.frombuffer(out, np.uint8), bitorder="little")[600:9000]
+    pitch = np.array([4, 9, 15, 27, 31, 42, 47]) - 1
+    best_sync = best_pitch = 0.0
+    for offset in range(54):
+        frames = bits[offset:][: (bits.size - offset) // 54 * 54].reshape(-1, 54)
+        best_sync = max(best_sync, float(np.mean(frames[1:, 53] != frames[:-1, 53])))
+        weight = frames[:, pitch].sum(axis=1)
+        best_pitch = max(best_pitch, float(np.isin(weight, (0, 3, 4, 7)).mean()))
+    assert best_sync < 0.7 and best_pitch < 0.7  # clear LPC-10 would score about 1.0

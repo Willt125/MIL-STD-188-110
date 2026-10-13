@@ -139,6 +139,31 @@ def test_unimplemented_designator_is_ignored():
     assert d is not None and d.mode == m
 
 
+def test_int_019_voice_preamble_is_found_when_asked_for():
+    """With voice enabled, the same preamble is a 2400V detection, and --zero-interleave
+    does not turn it into a zero-interleave mode (voice is short interleave only)."""
+    v = mode(2400, "short", voice=True)
+    for zero in (False, True):
+        s = PreambleSearch(voice=True, zero_interleave=zero)
+        d = s.process(signal(v)) or s.flush()
+        assert d is not None and d.mode == v and (d.d1, d.d2) == (7, 7) and d.count == 2
+
+
+def test_int_019_a_voice_count_is_checked_against_the_next_segment():
+    """A misread count (1 where the next segment says 1 too) is rejected for voice as for
+    data, and the preamble is taken from the segment after it."""
+    tribits = []
+    for count in (1, 1, 0):
+        cs = [*T.PREAMBLE_FIXED_PREFIX, 7, 7, *symbols.count_symbols(count), 0]
+        tribits += [t for c in cs for t in T.TABLE_XIII[c]]
+    tri = scrambler.scramble(np.array(tribits, np.uint8), scrambler.sync_sequence(0, len(tribits)))
+    lead, segment = 1000, 480 * 4
+    x = np.concatenate([np.zeros(lead, complex), modulate(tri), np.zeros(3000, complex)])
+    d = first_detection(x, voice=True)
+    assert d is not None and d.count == 1
+    assert abs(d.segment_start - (lead + segment)) < 4
+
+
 @settings(max_examples=10, deadline=None)
 @given(st.lists(st.integers(1, 9000), min_size=1, max_size=5))
 def test_detection_does_not_depend_on_chunking(chunks):

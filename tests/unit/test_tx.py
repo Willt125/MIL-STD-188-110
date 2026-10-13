@@ -24,6 +24,7 @@ from m110c.tx import Transmitter, data_phase_symbols, transmit, transmit_bytes
 
 MODES = all_modes()
 FRAMED = [m for m in MODES if not m.is_75bps]
+VOICE = mode(2400, "short", voice=True)  # INT-019
 EOM = bitops.int_to_bits(T.EOM_SEQUENCE, 32)
 
 
@@ -126,7 +127,7 @@ def test_interleaved_modes_end_on_a_block_boundary(m):
 # --- Probes ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("m", FRAMED, ids=ids(FRAMED))
+@pytest.mark.parametrize("m", [*FRAMED, VOICE], ids=ids([*FRAMED, VOICE]))
 def test_int_005_probes_are_zero_except_d1_d2_at_block_end(m):
     """Every probe is zero except the last two of each 1440/11520-symbol block, which
     carry the D1 and D2 patterns, including in the final block."""
@@ -285,3 +286,22 @@ def test_data_phase_length_matches_the_transmitter(m, n_bits):
     tribits = transmit(np.zeros(n_bits, dtype=np.uint8), m)
     preamble = symbols.preamble_tribits(m).size
     assert tribits.size - preamble == data_phase_symbols(m, n_bits)
+
+
+def test_int_019_voice_differs_from_2400s_only_in_the_designators():
+    """The same bits sent as 2400S and as 2400V: the transmissions differ only in the
+    D1/D2 slots of each preamble segment and in the D probes, nowhere else."""
+    data = mode(2400, "short")
+    bits = sample_message(n_bytes=700)  # just over two interleaver blocks
+    a, b = transmit(bits, data), transmit(bits, VOICE)
+    assert a.size == b.size
+    differ = np.flatnonzero(a != b)
+    slot = len(T.TABLE_XIII[0])
+    segment = T.PREAMBLE_CHANNEL_SYMBOLS_PER_SEGMENT * slot
+    n_pre = data.preamble_symbols
+    pre, post = differ[differ < n_pre], differ[differ >= n_pre] - n_pre
+    assert pre.size and set((pre % segment) // slot) == {9, 10}  # D1 and D2 slots only
+    position = post // data.frame_symbols % data.frames_per_block
+    in_probe = post % data.frame_symbols >= data.unknown_per_frame
+    assert post.size and in_probe.all()
+    assert set(position) == {data.frames_per_block - 2, data.frames_per_block - 1}
