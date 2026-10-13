@@ -401,3 +401,72 @@ at 9600 S/s; they pass in about two minutes.
 
 `m110c-rx` now prints a line when each message's preamble is found (mode, time, carrier),
 before the summary when it ends, so a live listener knows something is being received.
+
+## M13: conformance at length, and 75 bps over long messages (2026-10-13)
+
+### The conformance report
+
+`tools/conformance.py` runs every Table XVI row through the Appendix E simulator and the
+complete receiver, over many independent channel realisations, and writes
+[`CONFORMANCE.md`](CONFORMANCE.md). The rows that require 1e-5 get a million bits each, so
+that with no errors the 95% upper bound on the BER is a third of the requirement. Earlier
+milestones ran each row for a few thousand bits; this is the first measurement able to
+confirm the 1e-5 rows rather than merely fail to contradict them.
+
+### 75 bps lost lock on long messages
+
+The tool's first trial run failed the 75-bps row: one of twelve one-minute messages lost
+lock 48 s in. The short messages of earlier milestones (about 6 s of data) had hidden it;
+losing lock is a rate per minute, and on one-minute messages at 0 dB fewer than half
+survived (22 of 48), against 15 of 16 short ones.
+
+A trace of the failing message showed the mechanism. The channel has no clock offset, so the
+symbol period is exactly 4 samples. Through most of the message the timing loop's period
+wandered by about ±0.04%. Then, over a few weak units, it absorbed a consistent error of
+about 1.5 symbols per unit, which is not large enough to be treated as a switch to the other
+path, fell to 3.9926 (0.18% off), and ran 15 symbols away within two seconds. At 75 bps there
+are no probes: the channel estimate comes from decided symbols, and once timing has gone, so
+have the decisions.
+
+What was measured (one-minute 75L messages, 5 ms, 5 Hz, 0 dB; clean of 48):
+
+| Change | Clean |
+|--------|-------|
+| none (M12) | 22 |
+| units with under 10% of the power as signal teach no loop | 31 |
+| timing error clipped to ±½ symbol per unit | 18 |
+| clipping and the gate | 23 |
+| period adapts 10× more slowly in the data phase | 36 |
+| slower period and the gate | 37 |
+| period frozen after the preamble | 30 |
+| frozen period and the gate | 41 |
+
+Clipping is worse: real corrections can be large. Freezing the period scored best, but
+relies entirely on what a 0.6-s preamble taught it, and differs from the slower period by
+less than the run-to-run spread; the slower period with the gate was kept. Applied at all
+rates it made 4800 bps slightly worse on the same channels (236 bit errors against 192 on
+the 0.5-Hz row), and nothing was measured to gain from it there, so it applies at 75 bps
+only. The final version (gate only in the data phase), on other channels than the ones it
+was chosen on, clean of 48:
+
+| | M12 | M13 |
+|-|-----|-----|
+| 75L, 2 dB (Table XVI) | 48 | 48 |
+| 75L, 0 dB | 22 | 33 |
+| 75S, 2 dB | 44 | 42 |
+| 75S, 0 dB | 6 | 18 |
+
+Clock offsets of ±900 and ±2000 ppm are followed as before (75S and 2400 bps, AWGN and
+fading, one-minute messages: the same messages decode, clocks reported within 20 ppm), the
+real recordings decode as before, and the message that failed is a slow test.
+
+### Remaining limit: the 75-bps row of Table XVI is not met
+
+The full conformance run (CONFORMANCE.md) lost 3 of 223 one-minute 75L messages at the Table
+XVI point (2 dB, 5 ms, 5 Hz): BER 7.7e-3 against 1e-5. Every other row meets its requirement
+or is consistent with it. The period no longer runs away in these failures (it stays within
+±0.1%). Instead, in a deep fade, the sampling phase drifts by tens of samples within a few
+seconds, and the alignment then jumps by 15–20 symbols in one step: further than any real
+path on this channel (the two are 12 symbols apart), so a phantom path like the one found in
+M11. Losing lock is a rate per minute (about one per 75 minutes of signal here), so short
+messages rarely show it. Not resolved in this milestone.
