@@ -461,3 +461,56 @@ def test_75bps_a_minute_long_message_at_the_table_xvi_point():
     y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 2.0), seed=10).process(x)
     out, rx = receive(y, [9600])
     assert out == msg and len(rx.messages) == 1 and rx.messages[0].eom_found
+
+
+def _set_profiles(x, m):
+    """Run the receiver on ``x``, recording the 75-bps set profile at every data unit."""
+    seen = []
+    original = E.EqualizingDemodulator._update_set_profile
+
+    def spy(self, k0, k1):
+        original(self, k0, k1)
+        seen.append((self.align, self.set_profile.copy(), self.wide.copy()))
+
+    E.EqualizingDemodulator._update_set_profile = spy
+    try:
+        out, rx = receive(x)
+    finally:
+        E.EqualizingDemodulator._update_set_profile = original
+    return out, seen
+
+
+def test_the_set_profile_sees_the_paths_without_the_equaliser():
+    """75 bps (M13): correlating each set with the four patterns at every tap of the wide
+    span is a delay profile that needs no decisions. Two fixed paths 12 symbols apart show
+    as the two strongest taps, well above the floor of sets read at a wrong delay."""
+    m = mode(75, "short")
+    msg = message(30)
+    x = two_paths(signal(m, msg), 5.0, gains=(1.0, 0.7j), fractional=False)
+    out, seen = _set_profiles(x, m)
+    assert out == msg and seen
+    align, profile, wide = seen[-1]
+    peaks = sorted(wide[np.argsort(profile)[-2:]].tolist())
+    assert peaks[1] - peaks[0] == 12
+    floor = np.median(profile)
+    assert profile.max() > 10 * floor  # more than 10 dB above the floor
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "seed, failure",
+    [
+        (103, "alignment jumped 15 symbols in a fade, to a path that was not there"),
+        (170, "a count misread in a fade put the data phase a segment late"),
+    ],
+)
+def test_75bps_minute_long_messages_that_used_to_lose_lock(seed, failure):
+    """75L for a minute at the Table XVI point (2 dB, 5 ms, 5 Hz): two of the three messages
+    the conformance run lost after the period fix (docs/PERFORMANCE.md, M13)."""
+    m = mode(75, "long")
+    msg = bytes(np.random.default_rng(100_000 + seed).integers(0, 256, 562, dtype=np.uint8))
+    y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 2.0), seed=seed).process(
+        signal(m, msg, tail=9600)
+    )
+    out, rx = receive(y, [9600])
+    assert out == msg and len(rx.messages) == 1 and rx.messages[0].eom_found, failure
