@@ -99,6 +99,12 @@ FREQUENCY_TIME_CONSTANT_S = 1.0
 SUB_BLOCK = 8  # symbols per equaliser coefficient update
 RIDGE = 1e-6  # least squares: regularisation relative to the average symbol energy
 LOSS_SECONDS = 1.0
+# 75 bps has no probes, so in the data phase the loops learn from decided symbols, through
+# fades. Over a long message that let the timing loop's period run away (docs/PERFORMANCE.md,
+# M13). There: units with less than this share of the power as signal teach no loop, and
+# the period (the clock offset, learned in the preamble) adapts this much more slowly.
+TRACK_FRACTION_75 = 0.1
+PERIOD_GAIN_75 = 0.1
 LOSS_SNR_DB = -6.0  # as a power share, 0.2, averaged over LOSS_SECONDS; noise alone gives ~0
 
 
@@ -492,8 +498,13 @@ class EqualizingDemodulator:
         signal = float(np.sum(np.abs(h) ** 2))
         centre = k1 - self.a - self._window(k1) / 2
         usable = signal > 1e-12 * max(noise, 1e-30)
+        # (75 bps, data phase: a unit that is mostly noise teaches the loops nothing.)
+        learn = usable and not (
+            self.mode.is_75bps and self.in_data_phase and self._fit_fraction < TRACK_FRACTION_75
+        )
         if usable:
-            self._track(h, centre)
+            if learn:
+                self._track(h, centre)
             self._estimates.append((centre, h, max(noise, 1e-12 * signal)))
         self._next_symbol = k1
         output = None
@@ -509,7 +520,7 @@ class EqualizingDemodulator:
         # SNR = signal / noise = f / (1 - f), for f the signal's share of the power.
         self.unit_snr_db.append(_db(fraction / (1 - fraction)) if fraction < 1 else float("inf"))
         edge = leading_edge(self.profile, self.wide)
-        if usable and not -2 < edge < 3:  # a path appeared earlier, or the first one faded
+        if learn and not -2 < edge < 3:  # a path appeared earlier, or the first one faded
             self._realign(edge)
         return self._hold(output, fraction, k0, k1)
 
@@ -563,6 +574,8 @@ class EqualizingDemodulator:
         bandwidth = self.timing_bandwidth_hz if self.in_data_phase else TRAINING_TIMING_HZ
         w_t = 2 * np.pi * bandwidth * n / T.SYMBOL_RATE
         kp, ki = 2 * TIMING_DAMPING * w_t, w_t**2
+        if self.mode.is_75bps and self.in_data_phase:
+            ki *= PERIOD_GAIN_75
         # The timing detector uses the plain least-squares estimate: the LMMSE one leans
         # towards the long-term profile, which lags behind a drifting clock.
         error = self._timing_error(self._least_squares) * self.period

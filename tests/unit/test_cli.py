@@ -40,7 +40,8 @@ def test_file_to_file(tmp_path):
 
 def test_output_does_not_depend_on_how_the_pipe_delivers_input(tmp_path):
     """Feed stdin one byte at a time through a real OS pipe, flushing each byte, and
-    compare with reading the same bytes from a file in one go."""
+    compare with reading the same bytes from a file in one go. INT-017: the encoder
+    blocks on input rather than filling, so the pacing of the pipe cannot matter."""
     src, from_file, from_pipe = tmp_path / "in.bin", tmp_path / "a.cf32", tmp_path / "b.cf32"
     src.write_bytes(MESSAGE)
     assert run_tx(str(src), "-o", str(from_file), "-r", "2400", "-i", "long").returncode == 0
@@ -78,6 +79,7 @@ def test_wav_to_a_pipe_and_to_a_file(tmp_path):
 
 
 def test_empty_input_still_produces_a_transmission():
+    """INT-017: EOF ends the message and triggers the EOM phase."""
     out = run_tx("-r", "75", "-i", "zero", "-q")
     assert out.returncode == 0
     samples = io.decode_samples(out.stdout, "cf32")

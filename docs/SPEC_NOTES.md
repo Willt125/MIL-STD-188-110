@@ -2,8 +2,9 @@
 
 This file records every place where MIL-STD-188-110C w/Change 1 (the PDF in this repo) is
 ambiguous, internally inconsistent, or silent, and what this implementation does about it.
-Code that depends on an entry carries a `# INT-nnn` comment. Tests that pin the behavior are
-named `test_int_nnn_*`.
+Code that depends on an entry cites it (`INT-nnn`), and so does at least one test that pins
+the behaviour (in its name, `test_int_nnn_*`, or its docstring); `tests/unit/test_spec_notes.py`
+checks that every entry has both.
 
 **Kinds**
 - **Errata**: the spec contradicts itself. We pick the majority or most-specific reading.
@@ -166,6 +167,11 @@ metrics.
   bits for every Table VI size (asserted in `tx.py`).
 **Tests:** an independent length formula for every mode and message length (0, 1, 37 and 400
 bytes); messages that overflow a block by exactly one bit; flush bits decode as zero.
+**Receiver use (M12):** once it has found the EOM, the receiver computes where the
+transmission ended by this rule (`tx.data_phase_symbols`), so that a transmission following
+at once is searched from the right place. A modem that padded differently would only move
+that search start; the decoded data would not change. The 2400S recording confirms the rule
+with an interleaver; zero-interleave padding has not been seen in a recording.
 
 ### INT-014: Start of data phase in an offline encoder. *Unspecified, High*
 The real-time narrative (load during the preamble) is equivalent to: preamble, then block 1,

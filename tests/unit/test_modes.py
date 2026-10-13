@@ -118,6 +118,7 @@ def test_coding_parameters():
 
 
 def test_75bps_interleaver_uses_step_7():
+    """INT-007."""
     m = mode(75, "long")
     assert (m.interleaver_load_row_step, m.interleaver_fetch_col_decrement) == (7, 7)
     m = mode(2400, "long")
@@ -134,4 +135,5 @@ def test_invalid_modes_raise(rate, interleave):
 
 
 def test_int_022_mode_factory_normalises_4800():
+    """INT-022: 4800 bps is represented as zero interleave."""
     assert mode(4800, "long") == ModeSpec(4800, "zero")

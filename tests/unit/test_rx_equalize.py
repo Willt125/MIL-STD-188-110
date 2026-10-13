@@ -447,3 +447,17 @@ def test_75bps_on_the_table_xvi_channel_at_its_snr():
         )
         out, _ = receive(y)
         assert bit_errors(out, msg) == 0, seed
+
+
+@pytest.mark.slow
+def test_75bps_a_minute_long_message_at_the_table_xvi_point():
+    """75L for a minute on 2 paths, 5 ms, 5 Hz at 2 dB (the conformance report's first long
+    run). This channel let the timing loop's period run away 48 s in: 0.18% off within two
+    seconds, lock lost, the last 112 bytes missing. At 75 bps the loops no longer learn from
+    units that are mostly noise, and the period adapts slowly (docs/PERFORMANCE.md, M13)."""
+    m = mode(75, "long")
+    msg = bytes(np.random.default_rng(10_000 * 10 + 10).integers(0, 256, 562, dtype=np.uint8))
+    x = signal(m, msg, tail=9600)
+    y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 2.0), seed=10).process(x)
+    out, rx = receive(y, [9600])
+    assert out == msg and len(rx.messages) == 1 and rx.messages[0].eom_found

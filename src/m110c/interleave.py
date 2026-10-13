@@ -7,14 +7,16 @@ That turns bursts into the scattered errors the Viterbi decoder handles well.
 
 Load (§5.3.2.3.4)
     Start at column 0. The first bit goes in row 0, and each next bit goes ``step`` rows
-    further down, modulo ``rows`` (step 9 mod 40; step 7 mod 20 or mod 10 at 75 bps).
+    further down, modulo ``rows`` (step 9 mod 40; step 7 mod 20 or mod 10 at 75 bps,
+    INT-007).
     Because the step and row count are coprime, ``rows`` bits fill the column exactly once.
     Then move to the next column and repeat.
 
 Fetch (§5.3.2.3.5)
     Start at row 0, column 0. Each next bit is one row down and ``decrement`` columns to the
     left, modulo ``cols`` (17, or 7 at 75 bps). After the last row, return to row 0 and to
-    one column right of where the previous diagonal started.
+    one column right of where the previous diagonal started. The last row is fetched
+    before the reset (INT-007).
 
 Every row is visited once per diagonal and every diagonal starts in a different column, so
 the fetch reads each cell exactly once. The whole interleaver is therefore just a fixed
