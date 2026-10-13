@@ -39,6 +39,7 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M11 75-bps refinements, acquisition in fades | done |
 | M12 Hardening: streaming CLI, fuzzing, long streams | done |
 | M13 Conformance report and documentation (v1.0) | done |
+| Post-1.0: 2400 bps digital voice as a raw bit stream (INT-019) | done |
 
 ## Transmitting
 
@@ -52,7 +53,8 @@ m110c-tx --async 8N1 --format s16 < message.txt | aplay -f S16_LE -r 9600
 The output is complex baseband at 9600 samples/s with the carrier at +1800 Hz, so the real part
 is the audio for an upper-sideband transmitter. Options: `--rate` 75–4800, `--interleave`
 zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (a multiple of 2400),
-`--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`.
+`--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`,
+`--voice` (2400 bps digital voice: the input is a vocoder's bit stream, see below).
 `m110c-tx --help` lists them all.
 
 ## Receiving
@@ -79,7 +81,13 @@ dominate), using 0.1–0.4 s of one CPU core per second of signal (docs/PERFORMA
 Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
 resample other rates first, e.g. `sox in.wav -r 9600 out.wav`), `--no-equalizer` (the simpler
-single-gain tracker of M8, for comparison).
+single-gain tracker of M8, for comparison), `--voice` (below).
+
+**Digital voice** (D1/D2 = 7,7, reported as `2400V`) is the 2400S chain carrying a vocoder's
+bit stream (SPEC_NOTES INT-019, measured on a real recording). The receiver ignores it unless
+given `--voice`, and then writes the raw bits, never async-deframed. No vocoder is included:
+§5.3.1.2 calls for STANAG 4198 (LPC-10e) or STANAG 4591 (MELPe), which an external program
+must supply (see docs/PLAN.md, non-goals, for why).
 
 ## Simulating an HF channel
 

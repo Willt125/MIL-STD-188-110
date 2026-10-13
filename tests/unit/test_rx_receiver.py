@@ -350,3 +350,31 @@ def test_message_end_is_placed_from_the_eom():
     b = burst(mode(75, "short"), b"second", lead=0)
     _, rx = receive(np.concatenate([a, b]))
     assert abs(rx.messages[0].end_sample - a.size) < 100  # within the pulse-shaping tail
+
+
+# --- INT-019: digital voice ------------------------------------------------------------
+
+
+VOICE = mode(2400, "short", voice=True)
+
+
+def test_int_019_voice_is_received_as_a_raw_bit_stream_when_asked_for():
+    bits = bytes(np.random.default_rng(5).integers(0, 256, 600, dtype=np.uint8))
+    out, rx = receive(burst(VOICE, bits), voice=True)
+    assert out == bits
+    assert [(str(m.mode), m.eom_found) for m in rx.messages] == [("2400V", True)]
+
+
+def test_int_019_voice_is_ignored_by_default():
+    out, rx = receive(burst(VOICE))
+    assert out == b"" and rx.messages == []
+
+
+def test_int_019_voice_is_never_async_deframed():
+    """A vocoder's bits are not characters: with --async, voice still comes out as raw
+    synchronous bytes, and a data message after it is still deframed."""
+    fmt = AsyncFormat.parse("8N1")
+    x = np.concatenate([burst(VOICE), burst(mode(1200, "short"), async_format=fmt)])
+    out, rx = receive(x, voice=True, async_format=fmt)
+    assert out == MSG + MSG
+    assert [str(m.mode) for m in rx.messages] == ["2400V", "1200S"]

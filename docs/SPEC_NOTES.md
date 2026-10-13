@@ -41,7 +41,7 @@ could be tested.
 | INT-016 bit order | **Confirmed** (LSB-first) | the recordings carry async 8N1 characters, LSB first; Wavecom documents both ASCII SYNC (8 bits LSB first, our default) and ASCII ASYNC |
 | INT-025 async framing (8N1 etc.) | **Confirmed** | our AsyncDecoder reads the real fox payload with zero framing errors |
 | INT-021 sideband inversion | Supported (documentation) | Wavecom's decoder has a USB/LSB polarity switch |
-| INT-019 unimplemented D1/D2 | Inconclusive | the digital-voice recording is too weak to read reliably |
+| INT-019 digital voice (7,7) = 2400S chain | **Confirmed** (one recording) | after undoing the recording's 0.47% clock error: preamble 7,7 with counts 2, 1, 0; D probes match 7,7 (error 0.08 vs 2.0 for 6,4); re-encoded Viterbi output agrees with 99.9% of channel decisions under the 2400S interleaver (84% under no interleaver or random input); EOM after 9056 bits |
 | INT-020 symbol placement (Figure 5) | **Confirmed** | 1-bit (600/150), 2-bit (1200L text), 3-bit (2400/4800) all decode |
 | INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
 | Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
@@ -212,11 +212,27 @@ transmitter cannot prevent this.
 **Tests:** `tests/unit/test_rx_eom.py`: planted EOMs with and without trailing zeros, 0–3 EOM
 errors, 14/15 flush errors, truncated flushes, chunk invariance, bounded holdback.
 
-### INT-019: Unimplemented D1/D2 combinations. *Resolved by text, High*
-RX treats 7,7 (digital voice), reserved (long + 4800/voice) and 5,6/5,7 (application-specific)
-as "not implemented". It keeps searching rather than synchronizing on them.
-**Tests (M8):** a synthetic digital-voice preamble (D1, D2 = 7, 7) is ignored, and a real
-preamble right after it is still found.
+### INT-019: Digital voice and unimplemented D1/D2 combinations. *Unspecified, then measured, High*
+Table XI gives 2400 bps digital voice the designators 7,7 (short interleave; the long column is
+"reserved"), and §5.3.1.2 names the vocoders (STANAG 4198 or 4591). Nothing in 110C says how
+the vocoder's bits are carried: coding, interleaving, framing, or how the transmission ends.
+**Decision:** digital voice is the 2400S data chain unchanged (rate-1/2 code, 0.6-s
+interleaver, 32/16 frames, scrambler, EOM and flush) with D1/D2 = 7,7 in the preamble and in
+the D probes. It is the mode `2400V` (`mode(2400, "short", voice=True)`). The payload is
+treated as an opaque bit stream: no codec is included.
+**Evidence:** measured on the one voice recording (`MIL188-110A_DIGI-VX`, VALIDATION.md):
+the D probes, the code and interleaver, and the EOM all match this reading; zero interleave
+does not. Its payload is neither clear STANAG 4198 (no alternating sync bit or valid pitch
+words at any 54-bit offset) nor shows a MELPe-style sync bit; it is consistent with
+encrypted voice, so it could not identify the codec.
+**Receiver:** 7,7 is taken only when asked (`--voice`; `Receiver(voice=True)`), so a data
+user never receives a vocoder's bits by surprise, and voice is never async-deframed. Without
+it, 7,7 is ignored and the search continues. The reserved pairs (long + 4800/voice) and the
+application-specific 5,6/5,7 are always ignored.
+**Tests:** a synthetic 7,7 preamble is ignored by default, and a data preamble right after it
+is found; with voice enabled it is a 2400V detection with its counts checked as for data;
+2400V and 2400S transmissions of the same bits differ only in the D1/D2 slots and D probes;
+loopback through the receiver and the CLIs; the real recording (acceptance tests).
 
 ### INT-020: Symbol formation maps (Figure 5). *Interpretation, High*
 One-bit symbols: 0→0, 1→4. Two-bit symbols (after the MGD): `00→0, 01→2, 10→4, 11→6`.

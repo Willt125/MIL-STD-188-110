@@ -83,6 +83,12 @@ def tx_parser() -> argparse.ArgumentParser:
         help="interleaver: zero, short (0.6 s), long (4.8 s); ignored at 4800 bps (default short)",
     )
     p.add_argument(
+        "--voice",
+        action="store_true",
+        help="2400 bps digital voice (D1/D2 = 7,7): the input is a vocoder's bit stream, sent "
+        "as synchronous bits; needs --rate 2400 --interleave short (INT-019)",
+    )
+    p.add_argument(
         "-f", "--format", default="cf32", choices=io.FORMATS, help="sample format (default cf32)"
     )
     p.add_argument(
@@ -118,7 +124,14 @@ def tx_parser() -> argparse.ArgumentParser:
 
 def tx_main(argv=None) -> int:
     args = tx_parser().parse_args(argv)
-    m = mode(args.rate, args.interleave)
+    if args.voice and args.async_format is not None:
+        print("m110c-tx: --voice sends a bit stream; --async does not apply", file=sys.stderr)
+        return 2
+    try:
+        m = mode(args.rate, args.interleave, voice=args.voice)
+    except ValueError as exc:
+        print(f"m110c-tx: {exc}", file=sys.stderr)
+        return 2
     try:
         modulator = Modulator(
             sample_rate=args.sample_rate, carrier_hz=args.carrier, rolloff=args.rolloff
@@ -210,6 +223,12 @@ def rx_parser() -> argparse.ArgumentParser:
         help="treat short-interleave preambles as zero interleave (INT-012)",
     )
     p.add_argument(
+        "--voice",
+        action="store_true",
+        help="also receive 2400 bps digital voice (D1/D2 = 7,7) and output its raw bit "
+        "stream, as synchronous bytes even with --async (INT-019)",
+    )
+    p.add_argument(
         "--invert-spectrum",
         action="store_true",
         help="input is lower sideband (spectrum inverted, INT-021)",
@@ -287,6 +306,7 @@ def rx_main(argv=None) -> int:
             zero_interleave=args.zero_interleave,
             invert_spectrum=args.invert_spectrum,
             equalize=args.equalize,
+            voice=args.voice,
         )
         frame = io.bytes_per_sample(args.format) * channels
         leftover = b""

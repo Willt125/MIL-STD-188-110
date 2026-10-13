@@ -133,3 +133,15 @@ def test_wav_header_with_no_channels_or_zero_rate(channels, rate):
     out = run([*CLI, "rx", "-f", "wav"], header + data)
     assert out.returncode == 1 and b"Traceback" not in out.stderr
     assert b"no channels or a zero sample rate" in out.stderr
+
+
+def test_int_019_voice_round_trip(tmp_path):
+    sig = tmp_path / "v.cf32"
+    bits = bytes(range(256)) * 2
+    assert run([*CLI, "-q", "--voice", "-o", str(sig)], bits).returncode == 0
+    ignored = run([*CLI, "rx", str(sig)])
+    assert ignored.returncode == 0 and ignored.stdout == b""
+    assert b"no transmission found" in ignored.stderr
+    out = run([*CLI, "rx", "--voice", "--async", "8N1", str(sig)])
+    assert out.returncode == 0 and out.stdout == bits
+    assert b"2400V" in out.stderr

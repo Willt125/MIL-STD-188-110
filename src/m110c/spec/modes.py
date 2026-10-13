@@ -7,9 +7,14 @@ second time. The unit tests then check these derived values against the numbers 
 states in prose (e.g. "1440 tribit channel symbols", "0.6 s"), so a transcription error
 in one table shows up as a disagreement with another part of the spec.
 
-There are 19 modes: 75..2400 bps with zero, short or long interleave (18), plus 4800 bps.
-4800 bps has no interleaver; we represent it as ``interleave="zero"`` because it shares
+There are 19 data modes: 75..2400 bps with zero, short or long interleave (18), plus 4800
+bps. 4800 bps has no interleaver; we represent it as ``interleave="zero"`` because it shares
 the short-interleave preamble and D1/D2 column, exactly as zero interleave does (INT-022).
+
+A 20th mode, 2400 bps digital voice (``2400V``, D1/D2 = 7,7), is the 2400S data chain with
+the voice designators in its preamble and probes (INT-019). It carries a vocoder's bit
+stream, which this package passes through without interpreting; it is not a data mode, so
+:func:`all_modes` leaves it out.
 """
 
 from dataclasses import dataclass
@@ -26,6 +31,7 @@ class ModeSpec:
 
     rate: int  # user bit rate, bps
     interleave: str  # "zero", "short" or "long"
+    voice: bool = False  # 2400 bps digital voice (D1/D2 = 7,7), INT-019
 
     def __post_init__(self):
         if self.rate not in T.DATA_RATES:
@@ -36,12 +42,17 @@ class ModeSpec:
             # §5.3.2.3.4 note: "The interleaver shall be bypassed for 4800-bps".
             # Table XI: long-interleave 4800 is "reserved".
             raise ValueError("4800 bps has no interleaver; use interleave='zero' (INT-022)")
+        if self.voice and (self.rate, self.interleave) != (2400, "short"):
+            # Table XI: digital voice is 2400 bps, short interleave; long is "reserved".
+            raise ValueError("digital voice is 2400 bps with short interleave only (INT-019)")
 
     # -- naming ------------------------------------------------------------
 
     @property
     def name(self) -> str:
-        """Short name such as ``2400L``, ``600S``, ``75Z`` or ``4800``."""
+        """Short name such as ``2400L``, ``600S``, ``75Z``, ``4800`` or ``2400V``."""
+        if self.voice:
+            return "2400V"
         if self.rate == 4800:
             return "4800"
         return f"{self.rate}{self.interleave[0].upper()}"
@@ -193,6 +204,8 @@ class ModeSpec:
     @property
     def d1_d2(self) -> tuple[int, int]:
         """Designation symbols D1, D2 sent in the preamble and probes (Table XI)."""
+        if self.voice:
+            return T.TABLE_XI_DIGITAL_VOICE
         return T.TABLE_XI[(self.rate, self.sync_setting)]
 
     @property
@@ -210,14 +223,15 @@ class ModeSpec:
         return self.preamble_segments * T.PREAMBLE_CHANNEL_SYMBOLS_PER_SEGMENT * per_channel_symbol
 
 
-def mode(rate: int, interleave: str = "short") -> ModeSpec:
+def mode(rate: int, interleave: str = "short", voice: bool = False) -> ModeSpec:
     """Return the :class:`ModeSpec` for a rate and interleave setting.
 
-    4800 bps ignores ``interleave`` (it is always bypassed, INT-022).
+    4800 bps ignores ``interleave`` (it is always bypassed, INT-022). ``voice`` selects
+    2400 bps digital voice, which needs ``rate=2400`` and short interleave (INT-019).
     """
     if rate == 4800:
         interleave = "zero"
-    return ModeSpec(rate, interleave)
+    return ModeSpec(rate, interleave, voice)
 
 
 def all_modes() -> tuple[ModeSpec, ...]:
@@ -229,11 +243,15 @@ def all_modes() -> tuple[ModeSpec, ...]:
     return tuple(modes)
 
 
-def mode_from_d1_d2(d1: int, d2: int) -> ModeSpec | None:
+def mode_from_d1_d2(d1: int, d2: int, voice: bool = False) -> ModeSpec | None:
     """Mode signalled by a received D1, D2 pair, or None if not implemented (INT-019).
 
     Zero and short interleave share D1/D2 (INT-012); this returns the short setting.
+    Digital voice (7,7) is returned only when ``voice`` is set: a receiver of data should
+    not hand a vocoder's bits to its user as if they were data.
     """
+    if (d1, d2) == T.TABLE_XI_DIGITAL_VOICE:
+        return mode(2400, "short", voice=True) if voice else None
     for (rate, setting), pair in T.TABLE_XI.items():
         if pair == (d1, d2):
             return mode(rate, setting)

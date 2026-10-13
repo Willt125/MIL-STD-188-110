@@ -120,6 +120,7 @@ class PreambleSearch:
         rolloff: float = 0.25,
         block: int = 4096,
         zero_interleave: bool = False,
+        voice: bool = False,
     ):
         if sample_rate % T.SYMBOL_RATE:
             raise ValueError(f"sample rate must be a multiple of {T.SYMBOL_RATE} Hz")
@@ -128,6 +129,7 @@ class PreambleSearch:
         self.carrier_hz = carrier_hz
         self.threshold = threshold
         self.zero_interleave = zero_interleave
+        self.voice = voice  # accept 2400 bps digital voice (7,7) preambles (INT-019)
         self.waveforms = slot_waveforms(self.sps, rolloff)
         self.ref_energy = float(np.sum(np.abs(self.waveforms[0]) ** 2))
         self.slot = SLOT_TRIBITS * self.sps  # S: slot length in samples
@@ -280,7 +282,7 @@ class PreambleSearch:
         reading = read_segment(
             self._z, peak - self._z_start, coarse_f, self.waveforms, self.slot, self.sample_rate
         )
-        fields = segment_fields(reading)
+        fields = segment_fields(reading, voice=self.voice)
         if fields is None:
             return None
         found, d1, d2, count = fields
@@ -294,7 +296,7 @@ class PreambleSearch:
                 self.slot,
                 self.sample_rate,
             )
-            following = segment_fields(after, CONFIRM_PREFIX_ERRORS)
+            following = segment_fields(after, CONFIRM_PREFIX_ERRORS, voice=self.voice)
             if following is None or following[1:3] != (d1, d2):
                 continue  # unreadable (or another mode's): look one segment further
             if following[3] != count - j:
@@ -307,7 +309,7 @@ class PreambleSearch:
             # 75 bps a misread count in a fade put the data phase a segment late.)
             if count > CONFIRM_SEGMENTS:
                 return None
-        if self.zero_interleave and found.interleave == "short":
+        if self.zero_interleave and found.interleave == "short" and not found.voice:
             found = mode(found.rate, "zero")  # INT-012: zero and short share D1/D2
         return Detection(
             segment_start=peak + frac - self.prefilter_delay,
@@ -321,16 +323,16 @@ class PreambleSearch:
         )
 
 
-def segment_fields(reading, max_prefix_errors=1):
+def segment_fields(reading, max_prefix_errors=1, voice=False):
     """(mode, D1, D2, count) from a :func:`read_segment` result, or None if it is not a
-    valid preamble segment."""
+    valid preamble segment (or announces digital voice, unless ``voice``)."""
     if reading is None:
         return None
     symbols, _, prefix_errors = reading
     if prefix_errors > max_prefix_errors:
         return None
     d1, d2 = symbols[9], symbols[10]
-    found = mode_from_d1_d2(d1, d2)
+    found = mode_from_d1_d2(d1, d2, voice)
     counts = symbols[11:14]
     if found is None or min(counts) < 4 or symbols[14] != 0:
         return None

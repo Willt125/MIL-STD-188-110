@@ -14,7 +14,7 @@ Status: **accepted** (2026-10-11). Decisions recorded as **[DECIDED]**.
    | Rate (bps) | Interleave settings     | Notes                                   |
    |-----------:|-------------------------|-----------------------------------------|
    | 4800       | (none: bypassed)        | uncoded, DO in the spec                 |
-   | 2400       | zero, short, long       | data only (2400 digital voice excluded) |
+   | 2400       | zero, short, long       | data; digital voice as raw bits (post-1.0) |
    | 1200       | zero, short, long       |                                         |
    | 600        | zero, short, long       |                                         |
    | 300        | zero, short, long       | rate-1/2 code repeated 2x               |
@@ -35,8 +35,21 @@ Status: **accepted** (2026-10-11). Decisions recorded as **[DECIDED]**.
 
 ### Non-goals (for v1.0)
 
-- Frequency-hopping operation (§5.3.3, defers to the separately-controlled MIL-STD-188-148).
-- 2400 bps digital voice (D1/D2 = 7,7).
+- Frequency-hopping operation (§5.3.3). It is not the fixed-frequency waveform with pauses for
+  the hops: 110C itself gives it a different code at 2400 bps (punctured rate 2/3, Table IV),
+  one bit per symbol at 75 bps, other interleaver sizes at 300–75 bps, and a start-up in which
+  the modem buffers up to 2.4 s of data until the *radio* signals clear-to-transmit (the radio
+  owns the hopping; §5.3.2.2.1 d). The framing and timing within each hop are in
+  MIL-STD-188-148, which 110C lists as SECRET; later editions are reportedly unclassified but
+  still export-controlled. Implementing it in a public repository would publish controlled
+  technical data, and there is no unrestricted reference to test against. Out of scope.
+- Voice codecs. The modem side of 2400 bps digital voice (D1/D2 = 7,7) is supported after
+  v1.0 as a raw bit stream (`--voice`, INT-019): the modem carries the vocoder's bits and an
+  external program codes them. A codec is not included. §5.3.1.2 calls for STANAG 4198
+  (LPC-10e) or STANAG 4591 (MELPe); MELPe's rates carry third-party IPR (TI at 2400 bps,
+  Microsoft at 1200, Thales at 600, Compandent and AT&T for the noise pre-processor; some of
+  it probably expired, not checked), STANAG 4591 itself is sold under export restrictions,
+  and the open implementations found are GPL, which this MIT package cannot include.
 - Appendix A (TCP/UDP modem control), RTS/CTS/radio keying, remote control (§5.3.1.5).
 - Real-time sound-card I/O. We read and write sample streams; the user can pipe to `aplay`,
   `sox`, GNU Radio, an SDR, and so on.

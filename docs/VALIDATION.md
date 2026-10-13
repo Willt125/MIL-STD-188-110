@@ -57,7 +57,7 @@ the longest stream here (1200L), and far less for the rest.
 | 75S | 75S | exceptional sets at 44, 89, 134…; EOM found with the MGD, not without |
 | 75L | 75L | exceptional sets at 359, 719; EOM found |
 | 4800 (no interleave) | 4800 | mostly readable text; residual errors expected (uncoded 8-PSK, no equalizer) |
-| DIGI-VX | (7,7)? | too weak to read reliably; inconclusive |
+| DIGI-VX | 2400V (7,7) | first read as too weak; in fact a 0.47% clock error. Corrected: the 2400S chain, EOM found (below, "Digital voice") |
 | Long multi-burst files (ARQ, ALE, voice, ryryry) | — | not analysed yet; candidates for RX acceptance tests |
 
 Every one of the 13 data-mode D1/D2 pairs in Table XI was identified in at least one preamble.
@@ -165,7 +165,7 @@ for comparison).
 | ARQ bursts (2400L) | garbled (`.EQT.PC.E1.XQT…`) | clean repeated `EQT` blocks, EOM |
 | fox, 150S/L, 1200L, 600L, the ALE/ryryry files | text, EOM | the same text, EOM |
 | 2400S/L, 1200S, 600S, 300S/L, 75S/L, RadioScanner f1 | EOM (binary payloads) | the same |
-| DIGI-VX | nothing found | nothing found |
+| DIGI-VX | nothing found | nothing found (clock error; see "Digital voice") |
 
 Two of the M8 open points are explained by this:
 
@@ -257,11 +257,39 @@ remain the check against reality.
 spread-dependent rate, then the ×5 `X5IntrpFIRCoef` stages), and substitute it for
 `m110c.channel.watterson.FadingGain` (same `next(n)` interface; per-path power as passed).
 
+## Digital voice (2026-10-13)
+
+`MIL188-110A_DIGI-VX` is a 6-s clip, originally an MP3, of a 2400 bps digital-voice
+transmission. It had been set aside as "too weak". It is not weak: it runs **0.47% slow**.
+Its strongest preamble peaks are 1929 samples apart instead of 1920, so across one 0.2-s
+segment the slots drift by two symbols and the last ones (the count) read wrong. Resampled by
+1920/1929, the preamble reads perfectly: three segments, D1/D2 = 7,7, counts 2, 1, 0, carrier
+offset +5.6 Hz. That error is far beyond any working sound card; it is presumably a
+sample-rate conversion in the clip's history, and the acceptance test undoes it.
+
+Decoded as 2400S with the voice designators (probe SNR 9.1 dB):
+
+| Check | Result | Control |
+|-------|--------|---------|
+| D probes (last two of each block) | match 7,7: error 0.08 | 6,4: 2.03; 4,4: 2.03; 7,6: 0.96. The fox recording matches 6,4 (0.005) |
+| Re-encode the Viterbi output, compare with channel decisions | **99.9%** agree with the 2400S interleaver | no interleaver 84.3%; random soft bits 82.8% (a K=7 Viterbi decoder always finds a nearby path) |
+| EOM | exact match after 9056 payload bits, then the flush | |
+
+So the voice transmission is the 2400S data chain, D probes included, and it ends like a data
+message (INT-019). The payload: about 0.2 s of a repeating header, about 3.4 s of bits with
+49% ones and 50% transitions, then the EOM. Tested against STANAG 4198 Annex C (54-bit
+frames; bit 54 alternates 1, 0; the 7-bit pitch word has Hamming weight 0, 3, 4 or 7), at all
+54 offsets: best sync alternation 0.62 and pitch-word validity 0.62, against 0.59 and 0.63 for
+random bits; a synthetic 4198 stream scores 1.00 and 1.00. No column alternates at any period
+from 20 to 200 bits either, which also argues against MELPe (which has a sync bit). The
+payload is consistent with encrypted voice, so this recording cannot identify the codec.
+
 ## As acceptance tests (M12, 2026-10-13)
 
 The results above are now checked by `tests/acceptance/test_recordings.py`: exact text for
 the fox, 150S/L and plain-text files, and mode, byte count and EOM for the binary payloads,
-in 8N1 framing. The tests run only when `M110C_RECORDINGS` names a directory holding the
+in 8N1 framing; for the digital-voice clip, ignored by default and, with voice enabled and
+its clock corrected, 2400V with 1132 bytes and the EOM. The tests run only when `M110C_RECORDINGS` names a directory holding the
 recordings as 9600-S/s WAV files under their original names; the recordings themselves stay
 outside the repository.
 
