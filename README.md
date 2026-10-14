@@ -98,7 +98,10 @@ m110c-chan --paths 2 --delay-ms 5 --doppler 5 --snr 7 --seed 3 in.cf32 -o out.cf
 
 The Watterson model of Appendix E: two equal-power paths, a delay spread apart, each with
 Rayleigh fading of the given Doppler spread, plus noise at an SNR measured in 3 kHz. Presets
-cover every Table XVI condition. Output is reproducible from `--seed`. The receiver meets every
+cover every Table XVI condition. Output is reproducible from `--seed`. For conditions that
+change over time, the library's `TimeVaryingChannel` lets the SNR and each path's power follow
+schedules (straight lines or random walks between points, `m110c.channel.schedule`); with
+constant schedules it is the Appendix E channel, sample for sample. The receiver meets every
 Table XVI condition in the simulated runs recorded in docs/PERFORMANCE.md.
 
 ## Development

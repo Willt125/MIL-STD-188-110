@@ -319,6 +319,11 @@ against Table XVI.
     clean round, and jumping down only after real losses, took that run from 437 to 780 bps
     end to end. Feedback needs short data transmissions (here 6 blocks) and polls for lost
     status replies.
+  - Conditions that change: `TimeVaryingChannel` (our extension of Appendix E, identical
+    to it with constant schedules) carries a whole toystack session on one continuous
+    channel, with SNR and path powers following straight-line or random-walk (Brownian
+    bridge) schedules. Not yet in `m110c-chan`'s command line. Doppler-spread and delay
+    changes are not modelled (a moving delay would also need a per-path Doppler shift).
 
   **[DECIDED]** No STANAG 5066, now or later: its current editions are not publicly
   distributable, and earlier ones differ on the air (the CRCs changed after the 1.0.2 draft).
