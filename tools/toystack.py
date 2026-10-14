@@ -28,10 +28,16 @@ THE FRAME FORMAT IS A DRAFT FOR EXPERIMENTS. S8 has decided nothing about it:
 A transmission is one 110 message holding any number of frames. The receiver hunts for
 the sync word, so a damaged frame costs only itself. Multi-byte fields are big-endian.
 
+Each session runs on one continuous channel (m110c.channel.watterson.TimeVaryingChannel):
+the fading carries on through every transmission and silence, and the SNR and path powers
+can follow schedules (m110c.channel.schedule: straight lines or random walks between
+points). The negotiated pattern's drifting scenarios are stress tests: real conditions
+drift over minutes to hours, not tens of seconds.
+
 Assumptions to keep in mind when reading the numbers: the turnaround and gap times are
-guesses, not measurements; each pattern runs at one fixed SNR; the fountain code is a toy
-(random XOR combinations), where real codes such as RaptorQ need fewer extra blocks; one run
-is one sample of the fading channel, not a measurement.
+guesses, not measurements; the fountain code is a toy (random XOR combinations), where real
+codes such as RaptorQ need fewer extra blocks; one run is one sample of the fading channel,
+not a measurement.
 """
 
 import argparse
@@ -45,7 +51,8 @@ import numpy as np
 
 from m110c import io
 from m110c.bits import bytes_to_bits
-from m110c.channel.watterson import ChannelSpec, WattersonChannel
+from m110c.channel import schedule as sched
+from m110c.channel.watterson import ChannelSpec, TimeVaryingChannel
 from m110c.modulate import modulate
 from m110c.rx.receiver import Receiver
 from m110c.spec import mode
@@ -79,6 +86,7 @@ CHANNEL = (2, 2.0, 1.0)  # paths, delay (ms), Doppler spread (Hz): Table XVI's c
 TURNAROUND_S = 0.5  # assumed radio switching time per change of direction
 GAP_S = 0.3  # assumed pause between two transmissions from the same station
 LEAD_S = 0.5  # silence before the first transmission of a session
+TAIL_S = 0.3  # silence after each transmission (transmitter hang time) before the next gap
 WAV_GAIN = 0.5  # headroom: in a fade the two paths can add in phase
 MAX_ROUNDS = 20  # give up on a transfer after this many repair rounds
 
@@ -181,10 +189,16 @@ def fountain_decode(k: int, blocks: dict):
 class Air:
     """One session on one channel: sends transmissions, keeps the books and the audio."""
 
-    def __init__(self, snr_db, seed: int, quiet: bool = False):
-        """``snr_db``: one value, or one per transmission (the last repeats), so that
-        conditions can change during a session."""
-        self.snr_db, self.seed, self.quiet = snr_db, seed, quiet
+    def __init__(self, snr_db, seed: int, quiet: bool = False, path_db=None):
+        """One continuous channel carries the whole session, silences included, so the
+        fading is continuous from one transmission to the next. ``snr_db`` and each entry of
+        ``path_db`` are a number or a schedule (m110c.channel.schedule) of dB against
+        seconds since the session began."""
+        self.seed, self.quiet = seed, quiet
+        self.snr = sched.as_schedule(snr_db)
+        self.channel = TimeVaryingChannel(
+            ChannelSpec(*CHANNEL), snr_db=snr_db, path_db=path_db, seed=seed
+        )
         self.measured_snr_db = None  # what the receiving station measured, last transmission
         self.total_s = 0.0
         self.turns = 0
@@ -209,24 +223,22 @@ class Air:
         x = modulate(transmit(bytes_to_bits(data), m))
         seconds = x.size / FS
         self.total_s += seconds
-        self.seed += 1
-        snr = self.snr_db
-        if not np.isscalar(snr):
-            snr = snr[min(len(self.log), len(snr) - 1)]
-        # The silence before the transmission goes through the channel too, so the
-        # recording has noise between transmissions, as a listener would hear.
-        sent = np.concatenate([np.zeros(int(gap * FS), complex), x])
-        channel = WattersonChannel(ChannelSpec(*CHANNEL, snr), seed=self.seed)
-        y = channel.process(np.concatenate([sent, np.zeros(FS, complex)]))
+        # The silences go through the channel too: the fading runs on, and the recording
+        # has noise between transmissions, as a listener would hear.
+        start_s = self.channel.samples_done / FS + gap
+        snr = float(self.snr.value(start_s + seconds / 2))  # mid-transmission, for the log
+        sent = np.concatenate([np.zeros(int(gap * FS), complex), x, np.zeros(int(TAIL_S * FS))])
+        y = self.channel.process(sent)
         self.clean.append(sent)
-        self.heard.append(y[: sent.size])
+        self.heard.append(y)
         rx = Receiver()
         got, bad = parse(rx.process(y) + rx.finish())
         self.measured_snr_db = rx.messages[0].snr_db if rx.messages else None
         payload = sum(len(f) - OVERHEAD for f in frames)
         self.say(
             f"\n== {label}: {NAMES[sender]} sends {len(frames)} frame(s), {len(data)} bytes "
-            f"({payload} payload) as {m} at {snr:g} dB: {seconds:.1f} s on air "
+            f"({payload} payload) as {m} at {snr:.1f} dB, t = {start_s:.0f} s: "
+            f"{seconds:.1f} s on air "
             f"({8 * payload / seconds:.0f} bps of payload)"
         )
         for f in frames[:show]:
@@ -457,7 +469,9 @@ def next_mode(current, measured_db, delivered):
     return mode(rates[there], "long"), estimate
 
 
-def negotiated(snr_db=13.0, data=None, seed=50, quiet=False, title="negotiated transfer"):
+def negotiated(
+    snr_db=13.0, data=None, seed=50, quiet=False, title="negotiated transfer", path_db=None
+):
     """A file whose transfer mode is negotiated from measured SNR, then renegotiated after
     every round from the SNR measured on the data and from how much of it arrived. Losses
     are still repaired with the fountain code. ``data`` defaults to the repository's README.
@@ -467,7 +481,7 @@ def negotiated(snr_db=13.0, data=None, seed=50, quiet=False, title="negotiated t
     if data is None:
         with open(os.path.join(REPO, "README.md"), "rb") as f:
             data = f.read()
-    a, b, air = Station(A), Station(B), Air(snr_db, seed, quiet)
+    a, b, air = Station(A), Station(B), Air(snr_db, seed, quiet, path_db)
     control = mode(600, "short")
     packed = zlib.compress(data, 9)
     bs, file_id = 200, 0x0F12
@@ -592,12 +606,30 @@ def main(argv=None) -> int:
             if args.file:
                 with open(args.file, "rb") as f:
                     data = f.read()
-            # A steady band, and one that fades from 17 to 9 dB partway through.
-            steady = negotiated(13.0, data, title="negotiated, steady 13 dB")
-            fading = negotiated(
-                [17.0] * 4 + [9.0], data, seed=60, title="negotiated, 17 dB falling to 9"
-            )
-            runs += [("6_negotiated", steady), ("6_negotiated_fall", fading)]
+            # Stress tests, not typical evenings: real drift takes minutes to hours.
+            scenarios = [
+                ("6_negotiated", 13.0, None, "negotiated, steady 13 dB"),
+                (
+                    "6_negotiated_fall",
+                    sched.linear(17.0, 9.0, duration_s=30.0, start_s=15.0),
+                    None,
+                    "negotiated, 17 dB sliding to 9 over 30 s",
+                ),
+                (
+                    "6_negotiated_walk",
+                    sched.walk(15.0, 10.0, 150.0, volatility=1.0, seed=8, bounds=(3, 25)),
+                    None,
+                    "negotiated, random walk 15 -> 10 dB",
+                ),
+                (
+                    "6_negotiated_path",
+                    14.0,
+                    (0.0, sched.linear(0.0, -20.0, duration_s=40.0, start_s=10.0)),
+                    "negotiated, 14 dB, path 2 fading out",
+                ),
+            ]
+            for label, snr, paths, title in scenarios:
+                runs.append((label, negotiated(snr, data, seed=60, title=title, path_db=paths)))
         else:
             index = PATTERNS.index(name) + 1
             runs.append((f"{index}_{name}", globals()[name]()))

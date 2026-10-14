@@ -179,6 +179,88 @@ class WattersonChannel:
         return y
 
 
+class TimeVaryingChannel:
+    """A Watterson channel whose SNR and path powers follow schedules (our extension).
+
+    ``snr_db`` and each entry of ``path_db`` are a number, a
+    :class:`~m110c.channel.schedule.Schedule` (values in dB against seconds since the
+    channel started), or None (no noise; path at its nominal power). Time runs on with every
+    sample processed, so one channel can carry a whole session, silences included, and its
+    fading stays continuous throughout.
+
+    The SNR schedule sets the noise level relative to the *nominal* signal power, as
+    Appendix E does; a path-power schedule scales that path's signal (0 dB = Appendix E's
+    1/paths). So a path fading out lowers the received signal against unchanged noise.
+
+    With constant schedules this is :class:`WattersonChannel`, sample for sample: same
+    random streams, same arithmetic. That is what lets it inherit the Appendix E validation.
+    """
+
+    def __init__(
+        self,
+        spec: ChannelSpec,
+        snr_db=None,
+        path_db=None,
+        sample_rate: int = 9600,
+        seed: int = 0,
+        signal_power: float = DEFAULT_SIGNAL_POWER,
+        bandwidth_hz: float = 3000.0,
+    ):
+        from .schedule import as_schedule
+
+        if spec.snr_db is not None:
+            raise ValueError("give the SNR as snr_db (a number or a schedule), not in spec")
+        self.spec = spec
+        self.sample_rate = sample_rate
+        self.snr = as_schedule(snr_db)
+        path_db = (None,) * spec.paths if path_db is None else tuple(path_db)
+        if len(path_db) != spec.paths:
+            raise ValueError(f"path_db needs one entry per path ({spec.paths})")
+        self.paths_db = tuple(as_schedule(p) for p in path_db)
+        self.signal_power, self.bandwidth_hz = signal_power, bandwidth_hz
+        # The stationary channel provides the delay line, fading gains and random streams.
+        self._base = WattersonChannel(spec, sample_rate, seed, signal_power, bandwidth_hz)
+        self.samples_done = 0
+
+    def time_s(self, n: int) -> np.ndarray:
+        """Times of the next ``n`` samples, in seconds since the channel started."""
+        return (self.samples_done + np.arange(n)) / self.sample_rate
+
+    def process(self, x: np.ndarray) -> np.ndarray:
+        base = self._base
+        x = np.asarray(x, dtype=complex)
+        n = x.size
+        t = self.time_s(n)
+        self.samples_done += n
+        amp = [None if p is None else 10 ** (p.value(t) / 20) for p in self.paths_db]
+        if base.spec.paths == 2:
+            extended = np.concatenate([base._history, x])
+            delayed = extended[:n]
+            base._history = extended[n:]
+        if base._fading is None:
+            if base.spec.paths == 1:
+                y = x.copy() if amp[0] is None else amp[0] * x
+            elif amp[0] is None and amp[1] is None:
+                y = np.sqrt(0.5) * (x + delayed)
+            else:
+                a0 = 1.0 if amp[0] is None else amp[0]
+                a1 = 1.0 if amp[1] is None else amp[1]
+                y = np.sqrt(0.5) * (a0 * x + a1 * delayed)
+        else:
+            g = base._fading[0].next(n)
+            y = (g if amp[0] is None else amp[0] * g) * x
+            if base.spec.paths == 2:
+                g = base._fading[1].next(n)
+                y += (g if amp[1] is None else amp[1] * g) * delayed
+        if self.snr is not None:
+            # The same arithmetic, in the same order, as WattersonChannel (E.5.5).
+            in_band = self.signal_power / 10 ** (self.snr.value(t) / 10)
+            noise_power = in_band * self.sample_rate / self.bandwidth_hz
+            pairs = base._noise_rng.standard_normal((n, 2))
+            y += np.sqrt(noise_power / 2) * (pairs[:, 0] + 1j * pairs[:, 1])
+        return y
+
+
 def analytic_fir(num_taps: int = 127) -> np.ndarray:
     """Taps of a Hilbert transformer (90-degree phase shift) for real-to-analytic conversion.
 

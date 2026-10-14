@@ -153,3 +153,18 @@ def test_a_file_that_does_not_rebuild_exactly_is_not_counted(monkeypatch):
     monkeypatch.setattr(toy.zlib, "decompress", lambda b: real(b) + b"!")
     _, result = toy.negotiated(snr_db=26.0, data=ordered_file(5), quiet=True)  # one block
     assert result["useful_bytes"] == 0
+
+
+def test_a_session_runs_on_one_continuous_scheduled_channel():
+    """Every transmission and every silence goes through the same channel, whose time runs
+    on, so a schedule spans the session and the fading is continuous across turns."""
+    from m110c.channel import schedule as sched
+
+    air = toy.Air(sched.linear(20.0, 5.0, duration_s=10.0), seed=0, quiet=True)
+    channel = air.channel
+    a = toy.Station(toy.A)
+    for _ in range(2):
+        air.send(toy.A, [a.frame("CHAT", toy.B, b"x" * 20)], toy.mode(1200, "short"), "chat")
+    assert air.channel is channel
+    assert channel.samples_done == sum(len(c) for c in air.clean) == sum(len(h) for h in air.heard)
+    assert channel.samples_done / toy.FS > 2 * (toy.LEAD_S + toy.TAIL_S)
