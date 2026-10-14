@@ -165,13 +165,11 @@ for line in (DOCS / "CONFORMANCE.md").read_text().splitlines():
 fig, ax = plt.subplots(figsize=(8, 3.5))
 for i, c in enumerate(rows):
     required, bound = float(c[3]), float(c[8])
-    label = f"{c[0]} bps, {c[1]}, {c[2]}"
     ax.plot([required], [i], "k|", markersize=14)
     ax.plot([bound], [i], "o", color="C2" if bound <= required else "C1")
-    ax.annotate(label, (2e-7, i), va="center", fontsize=7)
 ax.set_xscale("log")
 ax.set_xlim(1e-7, 1e-2)
-ax.set_yticks([])
+ax.set_yticks(range(len(rows)), [f"{c[0]} bps, {c[1]}, {c[2]}" for c in rows], fontsize=7)
 ax.invert_yaxis()
 ax.set_xlabel("bit error rate: required (|) and our 95% upper bound (o)")
 ax.set_title("Table XVI rows")
@@ -237,6 +235,19 @@ ax[1].set_xlabel("s")
 plt.tight_layout()
 plt.show()
 
+# %% [markdown]
+# Measured: 1200 bps at zero, short and long interleave, as the fraction of 256-byte frames
+# delivered intact. The long interleaver is clean from 10-12 dB at every fading speed. The
+# short one needs about 16 dB at 1 and 5 Hz, and about 20 dB on slow, 0.5-Hz fading, where a
+# fade lasts longer than its 0.6-s block. Without an interleaver, frames are still being lost
+# at 22 dB: every fade reaches the decoder whole.
+#
+# Two dips at high SNR (short at 5 Hz, zero at 0.5 Hz) are whole one-minute messages lost,
+# not scattered errors, and they show two weaknesses of *this* receiver: a mode misread from
+# a faded preamble (1200S taken for 75S: D1 = 6 read as 7, and nothing cross-checked it
+# against the later segments), and a message abandoned for good after one long fade
+# ("signal lost" with 59 s still to come). Both are recorded as receiver work in PLAN.md.
+
 # %%
 if points:
     fig, ax = plt.subplots(1, 3, figsize=(10, 3.4), sharey=True)
@@ -247,17 +258,18 @@ if points:
                 key=lambda p: p["snr_db"],
             )
             if ps:
-                a.semilogy(
+                a.plot(
                     [p["snr_db"] for p in ps],
-                    [ber(p) for p in ps],
+                    [100 * delivered(p) for p in ps],
                     "o-",
                     markersize=3,
                     label=interleave,
                 )
         a.set_title(f"1200 bps, {d_hz:g}-Hz fading", fontsize=10)
         a.set_xlabel("SNR (dB)")
-        a.grid(True, which="both", alpha=0.3)
-    ax[0].set_ylabel("bit error rate")
+        a.grid(True, alpha=0.3)
+    ax[0].set_ylabel("frames delivered (%)")
+    ax[0].set_ylim(-3, 103)
     if ax[0].get_legend_handles_labels()[0]:  # (a partial sweep may lack these points)
         ax[0].legend()
     plt.tight_layout()
@@ -267,8 +279,13 @@ if points:
 # ### Which rate, at which SNR
 #
 # Each rate's goodput against SNR on Table XVI's commonest channel (2 paths, 2 ms, 1 Hz),
-# with the best of them at each SNR shaded. The crossovers are why a link should choose its
-# rate from the conditions, as the playground's negotiated transfer does.
+# with the best of them at each SNR shaded. In this sweep: 75 bps is the only one that works
+# at 0 dB and below; 300 bps takes over at about 2 dB (150 bps is never quite the best: where
+# it works, 300 bps delivers nearly as reliably at twice the rate), 600 bps at about 4,
+# 1200 bps from 6 to 10, and 2400 bps from 12. Uncoded 4800 bps never delivers every frame on
+# a fading channel, yet from about 22 dB the frames it does deliver beat 2400 bps's. The
+# crossovers are why a link should choose its rate from the conditions, as the playground's
+# negotiated transfer does.
 
 # %%
 if points:
@@ -278,6 +295,7 @@ if points:
         ps = sorted(select("rate", rate=rate), key=lambda p: p["snr_db"])
         if not ps:
             continue
+        ps = [p for p in ps if p["frames_ok"] > 0]  # nothing delivered: off a log scale
         snr = [p["snr_db"] for p in ps]
         gp = [rate * delivered(p) for p in ps]
         ax.plot(snr, gp, "o-", markersize=3, label=f"{rate} bps")
@@ -297,12 +315,17 @@ if points:
     print("best rate by SNR:", ", ".join(f"{x:g} dB: {best[x][1]}" for x in xs))
 
 # %% [markdown]
-# ### Multipath: the probe window
+# ### Multipath: how long an echo can be
 #
-# The equaliser measures the channel from the known probes, so it can only see echoes that
-# arrive within a probe's span: 16 symbols (6.7 ms) at 2400 bps, 20 symbols (8.3 ms) at
-# 600 bps. Here is the fraction of frames delivered at a high SNR (25 dB, so noise is not
-# the problem) as the delay spread grows.
+# The equaliser measures the channel from the known probes: 16 symbols (6.7 ms) at 2400 bps,
+# 20 symbols (8.3 ms) at 600 bps. So one might expect 2400 bps to give out at a shorter
+# delay spread than 600 bps. It does not: at a high SNR (25 dB, so noise is not the
+# problem), both are clean to 7-8 ms and both fail from 9 ms. The limit is this receiver's
+# own: its equaliser follows echoes up to 20 symbols (8.3 ms) after the first path
+# (`POSTCURSOR_TAPS` in `m110c/rx/equalize.py`), sized with margin over Table XVI's worst
+# case, 5 ms. It estimates the channel over many probes and known symbols, not one probe at
+# a time, so the probe's length is not the bound. A longer span would follow longer echoes,
+# at the cost of computation and of noise in more estimated taps.
 
 # %%
 if points:
@@ -313,7 +336,11 @@ if points:
             [p["delay_ms"] for p in ps], [100 * delivered(p) for p in ps], "o-", label=f"{rate}L"
         )
         ax.axvline(probe_ms, color=line.get_color(), ls=":", lw=1)
-    ax.set_xlabel("delay spread (ms); dotted: the probe span")
+    ax.axvline(20 / 2.4, color="k", lw=1)
+    ax.set_xlabel(
+        "delay spread (ms); dotted: 2400L's probe span; black: the equaliser's span "
+        "(and 600L's probes)"
+    )
     ax.set_ylabel("frames delivered (%)")
     ax.set_ylim(-3, 103)
     ax.set_title("Delay spread, 1-Hz fading, 25 dB")
@@ -323,9 +350,12 @@ if points:
 # %% [markdown]
 # ### Fast fading: how often the channel is measured
 #
-# 2400 bps measures the channel once per 48 symbols (32 data + 16 probe), 600 bps once per
-# 40 with probes half the frame; 75 bps never: it decides each 32-symbol set on its own.
-# Here is the fraction of frames delivered at 25 dB as the fading speeds up.
+# 2400 bps measures the channel once per 48 symbols (32 data + 16 probe); 600 bps once per
+# 40, with probes half the frame; 75 bps has no probes, and decides each 32-symbol set on
+# its own. At 25 dB, as the fading speeds up: 2400 bps gives out between 5 and 7 Hz, while
+# 600 and 75 bps hold to 15 Hz and fail by 20-30 Hz. Measuring the channel more often
+# triples the fading speed a mode can follow. Fast fading is what polar paths ("flutter")
+# bring, so they call for the slower rates even when the SNR is good.
 
 # %%
 if points:
@@ -342,3 +372,21 @@ if points:
     ax.set_title("Fading speed, 2 paths 2 ms, 25 dB")
     ax.legend()
     plt.show()
+
+# %% [markdown]
+# ### So which mode?
+#
+# What this sweep says, for this receiver:
+#
+# | Conditions | Favours | Why (figure above) |
+# |---|---|---|
+# | very low SNR (0 dB and below) | 75 bps | the only rate that works there |
+# | moderate SNR (about 2-10 dB) | 300-1200 bps | the goodput crossovers |
+# | good SNR (about 12 dB up) | 2400 bps | the goodput crossovers |
+# | slow fading (fades of a second or more) | long interleave | short blocks miss whole fades |
+# | fast fading (5 Hz up, e.g. polar flutter) | 600 bps or slower | more frequent probing |
+# | echoes beyond about 8 ms | nothing, here | beyond this receiver's equaliser span |
+# | short messages, latency | short interleave, SNR allowing | 0.6-s block (playground) |
+#
+# The SNR thresholds move with the channel (Table XVI tests each rate on a different one),
+# and with the receiver; the ordering is what carries over.

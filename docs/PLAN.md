@@ -386,6 +386,18 @@ Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough'
 figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
 (4) the playground notebook; (5) animations, the demodulator trace last.
 
+Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), for later work:
+- **A mode misread from one faded preamble segment.** A 1200S message (5 Hz, 14 dB) was
+  received as 75S: D1 = 6 read as 7. Segments that disagree on D1/D2 are taken as "another
+  mode's", never as evidence against the first reading, and a short preamble's count needs
+  no confirmation. A vote over the segments' D1/D2 would catch it.
+- **A message abandoned after one long fade.** A 1200Z message (0.5 Hz, 20 dB) was declared
+  "signal lost" in a slow fade and never resumed: 59 s of it discarded. Loss of signal
+  could keep the demodulator waiting for the signal to return, for a while, before
+  ending the message.
+- The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
+  (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
+
 ---
 
 ## 7. Risks

@@ -14,9 +14,9 @@ receiver, exactly as tools/conformance.py runs them:
   SNR. Does an interleaver help only when its block is longer than a fade?
 * rate: every rate (long interleave; 4800 bps has none) on 2 paths, 2 ms, 1 Hz, against SNR.
   Where does each rate stop being the best choice?
-* delay: 2400L and 600L at a high SNR against delay spread, 0-8 ms (1 Hz fading). The probes
+* delay: 2400L and 600L at a high SNR against delay spread, 0-12 ms (1 Hz fading). The probes
   span 16 symbols, 6.7 ms at 2400 bps: does the equaliser give out near there?
-* doppler: 2400L, 600L and 75L at a high SNR against fading bandwidth, 0.5-10 Hz (2 ms).
+* doppler: 2400L, 600L and 75L at a high SNR against fading bandwidth, 0.5-30 Hz (2 ms).
   Does denser probing (600 bps) or none at all (75 bps) change how fast a channel can fade?
 
 For each point it records bits, bit errors, and 256-byte frames sent and received intact (a
@@ -78,10 +78,10 @@ def experiments():
         for snr in range(-4, 28, 2):
             add("rate", rate, "long", 2.0, 1.0, snr)
     for rate in (2400, 600):
-        for delay in range(0, 9):
+        for delay in range(0, 13):
             add("delay", rate, "long", delay, 1.0, HIGH_SNR_DB)
     for rate in (2400, 600, 75):
-        for doppler in (0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0):
+        for doppler in (0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0):
             add("doppler", rate, "long", 2.0, doppler, HIGH_SNR_DB)
     return points
 
