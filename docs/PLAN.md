@@ -335,6 +335,56 @@ against Table XVI.
   (e.g. MS-DMT, a Windows 110A sound-card modem), across mode, interleave and framing.
   Until then, the claim is "symbol-exact with one fielded modem's recording", not
   "interoperable".
+- **S10**: notebooks that explain the standard, the channel and the link-layer experiments
+  (see "Notebooks" below).
+
+### Notebooks (S10)
+
+**[DECIDED]** Three notebooks, each a py:percent script (the source) built into an `.ipynb`
+with outputs by `tools/build_notebook.py`, and each run by the test suite:
+
+1. **`walkthrough`** (exists): the standard, block by block, one message. To add: a ribbon
+   per mode (data/probe pattern, preamble length); preamble anatomy (prefix, D1/D2, count,
+   the countdown); constellations with their bit labels (8-PSK MGD, 1- and 2-bit subsets);
+   scrambling (spectrum of all zeros before and after); the RRC pulse and an eye diagram;
+   the 75-bps sets and their correlation matrix (exceptional sets); a burst of channel
+   errors before and after deinterleaving; coding gain (BER vs SNR, coded and uncoded).
+2. **`channel`** (new): the Watterson model (fading traces, Doppler spectrum vs Appendix E's
+   Gaussian, Rayleigh statistics), the channel's impulse response over time, schedules
+   (lines and walks), Table XVI performance from CONFORMANCE.md's data, and **matching the
+   mode to the conditions**:
+   - interleave vs fade duration: 1200 bps at zero/short/long interleave on 0.5, 1 and
+     5 Hz fading, with a fading trace under the 0.6-s and 4.8-s blocks;
+   - rate vs SNR: goodput of every rate against SNR, and the crossovers that make
+     negotiation worth having;
+   - delay spread vs the probe window (16 symbols, 6.7 ms at 2400 bps): performance
+     against delay spread 0-8 ms;
+   - Doppler spread vs probe density (32/16 frames at 2400 bps, 20/20 at 600): performance
+     against Doppler spread 0.5-10 Hz; and where 75 bps (no probes) fits;
+   - named conditions (ITU-R F.1487's latitude/disturbance table and flutter, values to be
+     checked against the document) with the mode each favours.
+   These are our receiver's results, not limits of the standard, and the section says so.
+   Their data comes from a new `tools/sweep.py` (like `tools/conformance.py`, hours to run)
+   into `docs/data/sweep.json`, which the notebook plots, so the notebook stays fast.
+3. **`playground`** (new): the link-layer experiments of `tools/toystack.py`: frame anatomy,
+   session timelines (who transmits when), the negotiation figure (SNR schedule, measured
+   SNR, mode chosen, losses on one time axis), fountain decoding progress, and payload
+   efficiency against message size per mode (analytic).
+
+**[DECIDED]** Animations are GIFs (matplotlib's Pillow writer), written to `docs/figures/` by
+the build and shown as images: GitHub's notebook viewer strips JavaScript, so in-notebook
+animations would not play there. Kept small (about 1 MB or less each). Candidates: the
+interleaver loading and fetching, Viterbi survivor paths, the equaliser's constellation
+settling, the channel's impulse response fading.
+
+Each notebook script runs quickly by default (CI runs it); heavy figures read precomputed
+data or use a reduced setting. The receiver figures (equaliser, tracking loops) need an
+optional trace from the demodulator, off by default and tested, rather than reading private
+attributes; it is the one change to modem code.
+
+Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough's static
+figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
+(4) the playground notebook; (5) animations, the demodulator trace last.
 
 ---
 
