@@ -238,15 +238,16 @@ plt.show()
 # %% [markdown]
 # Measured: 1200 bps at zero, short and long interleave, as the fraction of 256-byte frames
 # delivered intact. The long interleaver is clean from 10-12 dB at every fading speed. The
-# short one needs about 16 dB at 1 and 5 Hz, and about 20 dB on slow, 0.5-Hz fading, where a
-# fade lasts longer than its 0.6-s block. Without an interleaver, frames are still being lost
-# at 22 dB: every fade reaches the decoder whole.
+# short one is clean from 12 dB on fast, 5-Hz fading, where its 0.6-s block spans several
+# fades, but needs about 16 dB at 1 Hz and 20 dB at 0.5 Hz, where one fade can fill the
+# block. Without an interleaver, frames are still being lost at 22 dB: every fade reaches
+# the decoder whole, and the faster the fading, the more of them.
 #
-# Two dips at high SNR (short at 5 Hz, zero at 0.5 Hz) are whole one-minute messages lost,
-# not scattered errors, and they show two weaknesses of *this* receiver: a mode misread from
-# a faded preamble (1200S taken for 75S: D1 = 6 read as 7, and nothing cross-checked it
-# against the later segments), and a message abandoned for good after one long fade
-# ("signal lost" with 59 s still to come). Both are recorded as receiver work in PLAN.md.
+# The first run of this sweep had two dips at high SNR, each a whole one-minute message
+# lost, from two weaknesses of the receiver, since fixed (PLAN.md): a mode misread from one
+# faded preamble segment (1200S taken for 75S), now outvoted by the segments after it; and
+# tap 0 left on a delayed path when the paths swapped power, so that the now-strong first
+# path fell outside the equaliser's span, now caught by a delay profile from the probes.
 
 # %%
 if points:
