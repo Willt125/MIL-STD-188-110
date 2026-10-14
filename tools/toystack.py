@@ -1,7 +1,7 @@
 """Toy link-layer traffic over m110c: what a station's transmissions would contain.
 
 An experiment for S8 (docs/PLAN.md), not part of the modem. It builds the transmissions a
-station would make for six kinds of traffic, sends each through the Appendix E channel
+station would make for several kinds of traffic, sends each through the Appendix E channel
 simulator and the complete receiver, and reports what arrived, the air time, and the
 throughput. Each pattern can also be saved as two WAV recordings: as sent, and as a
 third station would hear the whole session through the channel.
@@ -10,6 +10,7 @@ Usage:
     python tools/toystack.py                       # every pattern (a few minutes)
     python tools/toystack.py --quick               # smaller bulk file
     python tools/toystack.py --patterns chat email --out /tmp/toy
+    python tools/toystack.py --patterns negotiated --file some.txt
     python tools/toystack.py --bulk-snr 14 --no-wav
 
 THE FRAME FORMAT IS A DRAFT FOR EXPERIMENTS. S8 has decided nothing about it:
@@ -64,6 +65,9 @@ TYPES = {
     0x20: "MANIFEST",
     0x21: "BLOCK",
     0x22: "STATUS",
+    0x23: "OFFER",
+    0x24: "MODE",
+    0x25: "POLL",
 }
 CODE = {name: code for code, name in TYPES.items()}
 OVER, ACKREQ = 1, 2
@@ -77,6 +81,21 @@ GAP_S = 0.3  # assumed pause between two transmissions from the same station
 LEAD_S = 0.5  # silence before the first transmission of a session
 WAV_GAIN = 0.5  # headroom: in a fade the two paths can add in phase
 MAX_ROUNDS = 20  # give up on a transfer after this many repair rounds
+
+# Mode negotiation. The receiver reports SNR measured on the probes; on this channel that
+# reads 3-4 dB below the channel SNR in 3 kHz (measured: median offset 3.1 dB for 100-byte
+# 600S messages, 3.5-4 dB for 1500-byte 1200L ones, at every SNR from 4 to 22 dB), and a
+# single short message is good to about +/-1.5 dB (10-90%). So the estimate adds the offset,
+# and a mode is chosen only with a margin to spare.
+CAL_OFFSET_DB = 3.5
+MARGIN_DB = 2.0
+# Channel SNR each mode needs for a BER of 1e-5 with long interleave: Table XVI (2400-600 on
+# 2 paths, 2 ms, 1 Hz; 300-75 on the harsher 5 ms, 5 Hz, so conservative here).
+MODE_LADDER = ((2400, 18.0), (1200, 11.0), (600, 7.0), (300, 7.0), (150, 5.0), (75, 2.0))
+# Blocks per data transmission in the negotiated transfer: short enough that feedback (and a
+# new mode) comes back every few tens of seconds, as conditions change.
+ROUND_BLOCKS = 6
+REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
 def callsign(sign: str, ssid: int = 0) -> bytes:
@@ -162,8 +181,11 @@ def fountain_decode(k: int, blocks: dict):
 class Air:
     """One session on one channel: sends transmissions, keeps the books and the audio."""
 
-    def __init__(self, snr_db: float, seed: int, quiet: bool = False):
+    def __init__(self, snr_db, seed: int, quiet: bool = False):
+        """``snr_db``: one value, or one per transmission (the last repeats), so that
+        conditions can change during a session."""
         self.snr_db, self.seed, self.quiet = snr_db, seed, quiet
+        self.measured_snr_db = None  # what the receiving station measured, last transmission
         self.total_s = 0.0
         self.turns = 0
         self.last_sender = None
@@ -188,19 +210,23 @@ class Air:
         seconds = x.size / FS
         self.total_s += seconds
         self.seed += 1
+        snr = self.snr_db
+        if not np.isscalar(snr):
+            snr = snr[min(len(self.log), len(snr) - 1)]
         # The silence before the transmission goes through the channel too, so the
         # recording has noise between transmissions, as a listener would hear.
         sent = np.concatenate([np.zeros(int(gap * FS), complex), x])
-        channel = WattersonChannel(ChannelSpec(*CHANNEL, self.snr_db), seed=self.seed)
+        channel = WattersonChannel(ChannelSpec(*CHANNEL, snr), seed=self.seed)
         y = channel.process(np.concatenate([sent, np.zeros(FS, complex)]))
         self.clean.append(sent)
         self.heard.append(y[: sent.size])
         rx = Receiver()
         got, bad = parse(rx.process(y) + rx.finish())
+        self.measured_snr_db = rx.messages[0].snr_db if rx.messages else None
         payload = sum(len(f) - OVERHEAD for f in frames)
         self.say(
             f"\n== {label}: {NAMES[sender]} sends {len(frames)} frame(s), {len(data)} bytes "
-            f"({payload} payload) as {m}: {seconds:.1f} s on air "
+            f"({payload} payload) as {m} at {snr:g} dB: {seconds:.1f} s on air "
             f"({8 * payload / seconds:.0f} bps of payload)"
         )
         for f in frames[:show]:
@@ -404,7 +430,143 @@ def bulk(rate=2400, snr_db=11.0, size=16_000, seed=40, quiet=False):
     return air, result
 
 
-PATTERNS = ("beacon", "chat", "telemetry", "email", "bulk")
+def choose_mode(measured_db):
+    """The fastest long-interleave mode the measured SNR supports with the margin to spare
+    (the slowest if none does), and the channel SNR estimated from the measurement."""
+    estimate = measured_db + CAL_OFFSET_DB
+    for rate, needed in MODE_LADDER:
+        if estimate >= needed + MARGIN_DB:
+            return mode(rate, "long"), estimate
+    return mode(MODE_LADDER[-1][0], "long"), estimate
+
+
+def next_mode(current, measured_db, delivered):
+    """The receiver's proposal after a round: the SNR choice, tempered by what was actually
+    delivered. One estimate is good to a dB or two, so after a clean round (90% or more of
+    the blocks) the mode moves at most one rung either way; only real losses let it jump
+    straight down to the SNR's choice. Steps up need a clean round."""
+    rates = [rate for rate, _ in MODE_LADDER]  # fastest first
+    if measured_db is None:  # heard nothing at all: the most robust mode
+        return mode(rates[-1], "long"), None
+    target, estimate = choose_mode(measured_db)
+    here, there = rates.index(current.rate), rates.index(target.rate)
+    if delivered >= 0.9:
+        there = min(max(there, here - 1), here + 1)
+    elif there < here:
+        there = here  # losses: never step up
+    return mode(rates[there], "long"), estimate
+
+
+def negotiated(snr_db=13.0, data=None, seed=50, quiet=False, title="negotiated transfer"):
+    """A file whose transfer mode is negotiated from measured SNR, then renegotiated after
+    every round from the SNR measured on the data and from how much of it arrived. Losses
+    are still repaired with the fountain code. ``data`` defaults to the repository's README.
+
+    Each station acts only on what it received: the sender changes mode only when it hears
+    the receiver's MODE frame, and polls (up to three times) when a status reply is lost."""
+    if data is None:
+        with open(os.path.join(REPO, "README.md"), "rb") as f:
+            data = f.read()
+    a, b, air = Station(A), Station(B), Air(snr_db, seed, quiet)
+    control = mode(600, "short")
+    packed = zlib.compress(data, 9)
+    bs, file_id = 200, 0x0F12
+    padded = packed + bytes(-len(packed) % bs)
+    source = [np.frombuffer(padded[i : i + bs], np.uint8).copy() for i in range(0, len(padded), bs)]
+    k = len(source)
+    offer = struct.pack(">HIIHH", file_id, len(data), len(packed), bs, k)
+    offer += zlib.crc32(data).to_bytes(4, "big") + b"README.md"
+
+    def mode_frame(chosen, measured_db):
+        payload = struct.pack(
+            ">HHch",
+            file_id,
+            chosen.rate,
+            chosen.interleave[0].upper().encode(),
+            round(10 * measured_db),
+        )
+        return b.frame("MODE", A, payload, OVER)
+
+    def heard_mode(frames):
+        for f in frames:
+            if f[0] == "MODE":
+                return mode(struct.unpack(">H", f[5][2:4])[0], "long")
+        return None
+
+    # 1. The offer goes out robustly; B measures it and answers with a mode.
+    m = None
+    for offer_mode in (control, mode(150, "short"), mode(75, "short")):
+        got = air.send(A, [a.frame("OFFER", B, offer, OVER)], offer_mode, f"offer as {offer_mode}")
+        if not got or air.measured_snr_db is None:
+            continue
+        measured = air.measured_snr_db
+        proposal, estimate = choose_mode(measured)
+        note = f"measured {measured:.1f} dB -> channel ~{estimate:.1f} dB -> use {proposal}"
+        m = heard_mode(air.send(B, [mode_frame(proposal, measured)], control, note))
+        if m is not None:
+            break
+    if m is None:
+        return air, {**air.summary(title, 0), "modes": []}
+    modes = [str(m)]
+
+    received, decoded, next_seed, done = {}, None, 0, False
+    count = min(ROUND_BLOCKS, k)
+    for _ in range(MAX_ROUNDS):
+        frames = [
+            a.frame(
+                "BLOCK", B, struct.pack(">HI", file_id, s) + fountain_block(source, s).tobytes()
+            )
+            for s in range(next_seed, next_seed + count)
+        ]
+        next_seed += count
+        got = air.send(A, frames, m, f"transfer: {count} blocks (k = {k})")
+        data_snr = air.measured_snr_db
+        blocks = [f for f in got if f[0] == "BLOCK"]
+        for f in blocks:
+            received[struct.unpack(">I", f[5][2:6])[0]] = np.frombuffer(f[5][6:], np.uint8)
+        decoded = fountain_decode(k, received)
+        status = b.frame("STATUS", A, struct.pack(">HHB", file_id, len(received), bool(decoded)))
+        reply, note = [status], "complete" if decoded is not None else f"{len(received)} of {k}"
+        if decoded is None:
+            proposal, estimate = next_mode(m, data_snr, len(blocks) / count)
+            reply.append(mode_frame(proposal, data_snr if data_snr is not None else -99.0))
+            note += f", {len(blocks)}/{count} delivered"
+            if estimate is not None:
+                note += f", measured {data_snr:.1f} dB -> ~{estimate:.1f} dB"
+            note += f" -> use {proposal}"
+        heard = air.send(B, reply, control, f"status ({note})")
+        for _ in range(3):  # A polls until it hears the status
+            if heard:
+                break
+            air.send(A, [a.frame("POLL", B, struct.pack(">H", file_id), OVER)], control, "poll")
+            heard = air.send(B, reply, control, f"status again ({note})")
+        if not heard:  # still nothing: assume the path got worse
+            rates = [rate for rate, _ in MODE_LADDER]
+            m = mode(rates[min(rates.index(m.rate) + 1, len(rates) - 1)], "long")
+        elif any(f[0] == "STATUS" and f[5][4] for f in heard):
+            done = True
+            break
+        elif (new := heard_mode(heard)) is not None:
+            m = new
+        if str(m) != modes[-1]:
+            modes.append(str(m))
+        count = min(ROUND_BLOCKS, max(3, int((k - len(received)) * 1.3) + 1))
+    ok = False
+    if decoded is not None:
+        rebuilt = zlib.decompress(b"".join(x.tobytes() for x in decoded)[: len(packed)])
+        ok = rebuilt == data
+    if done:
+        air.send(A, [a.frame("BYE", B)], control, "bye")
+    air.say(
+        f"   {len(data)} bytes ({len(packed)} compressed) rebuilt from {len(received)} "
+        f"blocks of {k}: {'identical' if ok else 'FAILED'}; modes used: {', '.join(modes)}"
+    )
+    result = air.summary(title, len(data) if ok else 0)
+    result["modes"] = modes
+    return air, result
+
+
+PATTERNS = ("beacon", "chat", "telemetry", "email", "bulk", "negotiated")
 
 
 def main(argv=None) -> int:
@@ -414,6 +576,7 @@ def main(argv=None) -> int:
     p.add_argument("--no-wav", action="store_true", help="do not write recordings")
     p.add_argument("--quick", action="store_true", help="a 6-kB bulk file instead of 16 kB")
     p.add_argument("--bulk-snr", type=float, default=11.0, help="SNR of the bulk runs (dB)")
+    p.add_argument("--file", help="file for the negotiated transfer (default: README.md)")
     args = p.parse_args(argv)
     started = time.time()
     print(f"channel: {CHANNEL[0]} paths, {CHANNEL[1]:g} ms, {CHANNEL[2]:g} Hz fading")
@@ -424,16 +587,28 @@ def main(argv=None) -> int:
             # The same file at 2400L and at 1200L, the rate Table XVI says 11 dB supports.
             for rate in (2400, 1200):
                 runs.append((f"5_bulk_{rate}L", bulk(rate, args.bulk_snr, size)))
+        elif name == "negotiated":
+            data = None
+            if args.file:
+                with open(args.file, "rb") as f:
+                    data = f.read()
+            # A steady band, and one that fades from 17 to 9 dB partway through.
+            steady = negotiated(13.0, data, title="negotiated, steady 13 dB")
+            fading = negotiated(
+                [17.0] * 4 + [9.0], data, seed=60, title="negotiated, 17 dB falling to 9"
+            )
+            runs += [("6_negotiated", steady), ("6_negotiated_fall", fading)]
         else:
             index = PATTERNS.index(name) + 1
             runs.append((f"{index}_{name}", globals()[name]()))
     if not args.no_wav:
         for label, (air, _) in runs:
             air.save_wav(args.out, label)
-    print(f"\n{'run':14s} {'seconds':>8s} {'frames':>9s} {'bps':>6s}  pattern")
+    print(f"\n{'run':18s} {'seconds':>8s} {'frames':>9s} {'bps':>6s}  pattern")
     for label, (_, r) in runs:
         frames = f"{r['frames_received']}/{r['frames_sent']}"
-        print(f"{label:14s} {r['seconds']:8.1f} {frames:>9s} {r['bps']:6.0f}  {r['title']}")
+        modes = f" (modes: {', '.join(r['modes'])})" if r.get("modes") else ""
+        print(f"{label:18s} {r['seconds']:8.1f} {frames:>9s} {r['bps']:6.0f}  {r['title']}{modes}")
     print(f"(simulated in {time.time() - started:.0f} s)")
     return 0
 

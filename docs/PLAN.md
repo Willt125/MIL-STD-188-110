@@ -311,6 +311,14 @@ against Table XVI.
     than 9.6 s, too long for short messages; and at 11 dB a 16-kB file arrived faster at
     1200L, with no losses (875 bps end to end), than at 2400L repaired by a fountain code
     (about 560-670 bps). Choosing the 110 mode from measured SNR matters more than repair.
+  - Negotiating the mode (the tool's `negotiated` pattern, README.md as the file): the
+    receiver's SNR report reads 3-4 dB below the channel SNR, consistently, and one short
+    message is good to about +/-1.5 dB, so it is usable once calibrated and given a margin.
+    SNR alone overreacts: after a band drop, one low estimate sent a transfer from 1200L to
+    150L although 1200L had just delivered every block. Moving at most one rung after a
+    clean round, and jumping down only after real losses, took that run from 437 to 780 bps
+    end to end. Feedback needs short data transmissions (here 6 blocks) and polls for lost
+    status replies.
 
   **[DECIDED]** No STANAG 5066, now or later: its current editions are not publicly
   distributable, and earlier ones differ on the air (the CRCs changed after the 1.0.2 draft).

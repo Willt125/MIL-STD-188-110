@@ -91,3 +91,65 @@ def test_bulk_rebuilds_the_file_through_losses():
     _, result = toy.bulk(rate=2400, snr_db=10.0, size=2_000, quiet=True)
     assert result["frames_received"] < result["frames_sent"]  # losses happened
     assert result["useful_bytes"] == 2_000  # and the file arrived intact
+
+
+# --- the negotiated transfer -------------------------------------------------------------
+
+
+def measured_for(estimate_db):
+    """The reported SNR that the tool turns into this channel estimate."""
+    return estimate_db - toy.CAL_OFFSET_DB
+
+
+def test_choose_mode_picks_the_fastest_mode_with_the_margin_to_spare():
+    for _, needed in toy.MODE_LADDER:
+        m, estimate = toy.choose_mode(measured_for(needed + toy.MARGIN_DB + 1e-9))
+        assert m.interleave == "long" and estimate == pytest.approx(needed + toy.MARGIN_DB)
+        # Exactly at a requirement: that mode or a faster one sharing it (300 and 600 do).
+        assert dict(toy.MODE_LADDER)[m.rate] == needed
+    m, _ = toy.choose_mode(measured_for(toy.MODE_LADDER[0][1] + toy.MARGIN_DB - 0.01))
+    assert m.rate == toy.MODE_LADDER[1][0]  # just short of 2400L
+    assert toy.choose_mode(-20.0)[0].rate == toy.MODE_LADDER[-1][0]  # nothing fits: slowest
+
+
+def test_after_a_clean_round_the_mode_moves_one_rung_at_most():
+    at_1200 = toy.mode(1200, "long")
+    assert toy.next_mode(at_1200, 40.0, delivered=1.0)[0].rate == 2400  # up one, not more
+    assert toy.next_mode(at_1200, -20.0, delivered=1.0)[0].rate == 600  # down one, not to 75
+    assert toy.next_mode(at_1200, measured_for(14.0), delivered=0.95)[0].rate == 1200
+
+
+def test_after_losses_the_mode_drops_to_the_snr_choice_and_never_rises():
+    at_1200 = toy.mode(1200, "long")
+    assert toy.next_mode(at_1200, -20.0, delivered=0.5)[0].rate == 75  # straight down
+    assert toy.next_mode(at_1200, 40.0, delivered=0.5)[0].rate == 1200  # no step up
+    assert toy.next_mode(at_1200, None, delivered=0.0)[0].rate == 75  # heard nothing
+
+
+def ordered_file(lines=120):
+    """Numbered lines of digits: easy to eyeball, and several blocks long once compressed."""
+    rng = np.random.default_rng(1)
+    return b"".join(
+        b"line %03d: %s\n" % (i, b" ".join(b"%04d" % v for v in rng.integers(0, 10_000, 8)))
+        for i in range(lines)
+    )
+
+
+def test_negotiated_transfer_follows_the_receiver_and_delivers_the_file(monkeypatch):
+    """A strong channel negotiates 2400L; when the receiver then proposes another mode, the
+    sender switches to it; and the file, several rounds long, arrives exactly."""
+    monkeypatch.setattr(
+        toy, "next_mode", lambda current, snr, delivered: (toy.mode(600, "long"), 0)
+    )
+    data = ordered_file()
+    assert len(toy.zlib.compress(data, 9)) > toy.ROUND_BLOCKS * 200  # more than one round
+    _, result = toy.negotiated(snr_db=26.0, data=data, quiet=True)
+    assert result["modes"][:2] == ["2400L", "600L"]
+    assert result["useful_bytes"] == len(data)  # rebuilt, decompressed and compared
+
+
+def test_a_file_that_does_not_rebuild_exactly_is_not_counted(monkeypatch):
+    real = toy.zlib.decompress
+    monkeypatch.setattr(toy.zlib, "decompress", lambda b: real(b) + b"!")
+    _, result = toy.negotiated(snr_db=26.0, data=ordered_file(5), quiet=True)  # one block
+    assert result["useful_bytes"] == 0
