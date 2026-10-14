@@ -1,0 +1,2019 @@
+{
+ "meta": {
+  "channel": "Appendix E Watterson, 2 paths (1 if no delay and no fading), SNR in 3 kHz",
+  "date": "2026-10-14",
+  "frame_bytes": 256,
+  "m110c": "1.0.0",
+  "message_seconds": 60,
+  "numpy": "2.5.4",
+  "python": "3.13.16"
+ },
+ "points": {
+  "delay|2400L|0ms|1Hz|25dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 0.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 25.0
+  },
+  "delay|2400L|1ms|1Hz|25dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 1.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 25.0
+  },
+  "delay|2400L|2ms|1Hz|25dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 25.0
+  },
+  "delay|2400L|3ms|1Hz|25dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 3.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 25.0
+  },
+  "delay|2400L|4ms|1Hz|25dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 4.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 25.0
+  },
+  "delay|2400L|5ms|1Hz|25dB": {
+   "bits": 286720,
+   "channels": 2,
+   "delay_ms": 5.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "delay",
+   "frames": 140,
+   "frames_ok": 140,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 137.24666666666667,
+   "snr_db": 25.0
+  },
+  "delay|2400L|6ms|1Hz|25dB": {
+   "delay_ms": 6.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "delay|2400L|7ms|1Hz|25dB": {
+   "delay_ms": 7.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "delay|2400L|8ms|1Hz|25dB": {
+   "delay_ms": 8.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "delay|600L|0ms|1Hz|25dB": {
+   "delay_ms": 0.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|1ms|1Hz|25dB": {
+   "delay_ms": 1.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|2ms|1Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|3ms|1Hz|25dB": {
+   "delay_ms": 3.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|4ms|1Hz|25dB": {
+   "delay_ms": 4.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|5ms|1Hz|25dB": {
+   "delay_ms": 5.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|6ms|1Hz|25dB": {
+   "delay_ms": 6.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|7ms|1Hz|25dB": {
+   "delay_ms": 7.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "delay|600L|8ms|1Hz|25dB": {
+   "delay_ms": 8.0,
+   "doppler_hz": 1.0,
+   "experiment": "delay",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|0.5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|10Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 10.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|1Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|2Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 2.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|3Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 3.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|2400L|2ms|7Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 7.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|0.5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|10Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 10.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|1Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|2Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 2.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|3Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 3.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|600L|2ms|7Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 7.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|0.5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|10Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 10.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|1Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|2Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 2.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|3Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 3.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|5Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "doppler|75L|2ms|7Hz|25dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 7.0,
+   "experiment": "doppler",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 25.0
+  },
+  "interleave|1200L|2ms|0.5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200L|2ms|0.5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200L|2ms|0.5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200L|2ms|0.5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200L|2ms|0.5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200L|2ms|0.5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200L|2ms|0.5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200L|2ms|0.5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200L|2ms|0.5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200L|2ms|0.5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200L|2ms|5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200L|2ms|5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200L|2ms|5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200L|2ms|5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200L|2ms|5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200L|2ms|5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200L|2ms|5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200L|2ms|5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200L|2ms|5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200L|2ms|5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200S|2ms|0.5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200S|2ms|0.5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200S|2ms|0.5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200S|2ms|0.5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200S|2ms|0.5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200S|2ms|0.5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200S|2ms|0.5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200S|2ms|0.5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200S|2ms|0.5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200S|2ms|0.5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200S|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200S|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200S|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200S|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200S|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200S|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200S|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200S|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200S|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200S|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200S|2ms|5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200S|2ms|5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200S|2ms|5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200S|2ms|5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200S|2ms|5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200S|2ms|5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200S|2ms|5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200S|2ms|5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200S|2ms|5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200S|2ms|5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "short",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200Z|2ms|0.5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 0.5,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200Z|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200Z|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200Z|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200Z|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200Z|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200Z|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200Z|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200Z|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200Z|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200Z|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "interleave|1200Z|2ms|5Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "interleave|1200Z|2ms|5Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "interleave|1200Z|2ms|5Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "interleave|1200Z|2ms|5Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "interleave|1200Z|2ms|5Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "interleave|1200Z|2ms|5Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "interleave|1200Z|2ms|5Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "interleave|1200Z|2ms|5Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "interleave|1200Z|2ms|5Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "interleave|1200Z|2ms|5Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 5.0,
+   "experiment": "interleave",
+   "interleave": "zero",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "rate|1200L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": -2.0
+  },
+  "rate|1200L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": -4.0
+  },
+  "rate|1200L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 0.0
+  },
+  "rate|1200L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 10.0
+  },
+  "rate|1200L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 12.0
+  },
+  "rate|1200L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 14.0
+  },
+  "rate|1200L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 16.0
+  },
+  "rate|1200L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 18.0
+  },
+  "rate|1200L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 20.0
+  },
+  "rate|1200L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 22.0
+  },
+  "rate|1200L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 24.0
+  },
+  "rate|1200L|2ms|1Hz|26dB": {
+   "bits": 430080,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 210,
+   "frames_ok": 210,
+   "interleave": "long",
+   "rate": 1200,
+   "seconds": 411.74,
+   "snr_db": 26.0
+  },
+  "rate|1200L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 2.0
+  },
+  "rate|1200L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 4.0
+  },
+  "rate|1200L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 6.0
+  },
+  "rate|1200L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 1200,
+   "snr_db": 8.0
+  },
+  "rate|150L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": -2.0
+  },
+  "rate|150L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": -4.0
+  },
+  "rate|150L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 0.0
+  },
+  "rate|150L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 10.0
+  },
+  "rate|150L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 12.0
+  },
+  "rate|150L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 14.0
+  },
+  "rate|150L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 16.0
+  },
+  "rate|150L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 18.0
+  },
+  "rate|150L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 20.0
+  },
+  "rate|150L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 22.0
+  },
+  "rate|150L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 24.0
+  },
+  "rate|150L|2ms|1Hz|26dB": {
+   "bits": 49152,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 24,
+   "frames_ok": 24,
+   "interleave": "long",
+   "rate": 150,
+   "seconds": 382.94,
+   "snr_db": 26.0
+  },
+  "rate|150L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 2.0
+  },
+  "rate|150L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 4.0
+  },
+  "rate|150L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 6.0
+  },
+  "rate|150L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 150,
+   "snr_db": 8.0
+  },
+  "rate|2400L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": -2.0
+  },
+  "rate|2400L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": -4.0
+  },
+  "rate|2400L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 0.0
+  },
+  "rate|2400L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 10.0
+  },
+  "rate|2400L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 12.0
+  },
+  "rate|2400L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 14.0
+  },
+  "rate|2400L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 16.0
+  },
+  "rate|2400L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 18.0
+  },
+  "rate|2400L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 20.0
+  },
+  "rate|2400L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 22.0
+  },
+  "rate|2400L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 24.0
+  },
+  "rate|2400L|2ms|1Hz|26dB": {
+   "bits": 860160,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 420,
+   "frames_ok": 420,
+   "interleave": "long",
+   "rate": 2400,
+   "seconds": 411.74,
+   "snr_db": 26.0
+  },
+  "rate|2400L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 2.0
+  },
+  "rate|2400L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 4.0
+  },
+  "rate|2400L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 6.0
+  },
+  "rate|2400L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 2400,
+   "snr_db": 8.0
+  },
+  "rate|300L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": -2.0
+  },
+  "rate|300L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": -4.0
+  },
+  "rate|300L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 0.0
+  },
+  "rate|300L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 10.0
+  },
+  "rate|300L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 12.0
+  },
+  "rate|300L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 14.0
+  },
+  "rate|300L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 16.0
+  },
+  "rate|300L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 18.0
+  },
+  "rate|300L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 20.0
+  },
+  "rate|300L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 22.0
+  },
+  "rate|300L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 24.0
+  },
+  "rate|300L|2ms|1Hz|26dB": {
+   "bits": 98304,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 48,
+   "frames_ok": 48,
+   "interleave": "long",
+   "rate": 300,
+   "seconds": 382.94,
+   "snr_db": 26.0
+  },
+  "rate|300L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 2.0
+  },
+  "rate|300L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 4.0
+  },
+  "rate|300L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 6.0
+  },
+  "rate|300L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 300,
+   "snr_db": 8.0
+  },
+  "rate|4800Z|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": -2.0
+  },
+  "rate|4800Z|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": -4.0
+  },
+  "rate|4800Z|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 0.0
+  },
+  "rate|4800Z|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 10.0
+  },
+  "rate|4800Z|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 12.0
+  },
+  "rate|4800Z|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 14.0
+  },
+  "rate|4800Z|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 16.0
+  },
+  "rate|4800Z|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 18.0
+  },
+  "rate|4800Z|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 20.0
+  },
+  "rate|4800Z|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 22.0
+  },
+  "rate|4800Z|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 24.0
+  },
+  "rate|4800Z|2ms|1Hz|26dB": {
+   "bits": 1720320,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 286424,
+   "experiment": "rate",
+   "frames": 840,
+   "frames_ok": 595,
+   "interleave": "zero",
+   "rate": 4800,
+   "seconds": 370.82,
+   "snr_db": 26.0
+  },
+  "rate|4800Z|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 2.0
+  },
+  "rate|4800Z|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 4.0
+  },
+  "rate|4800Z|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 6.0
+  },
+  "rate|4800Z|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "zero",
+   "rate": 4800,
+   "snr_db": 8.0
+  },
+  "rate|600L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": -2.0
+  },
+  "rate|600L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": -4.0
+  },
+  "rate|600L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 0.0
+  },
+  "rate|600L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 10.0
+  },
+  "rate|600L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 12.0
+  },
+  "rate|600L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 14.0
+  },
+  "rate|600L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 16.0
+  },
+  "rate|600L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 18.0
+  },
+  "rate|600L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 20.0
+  },
+  "rate|600L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 22.0
+  },
+  "rate|600L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 24.0
+  },
+  "rate|600L|2ms|1Hz|26dB": {
+   "bits": 208896,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 102,
+   "frames_ok": 102,
+   "interleave": "long",
+   "rate": 600,
+   "seconds": 411.74,
+   "snr_db": 26.0
+  },
+  "rate|600L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 2.0
+  },
+  "rate|600L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 4.0
+  },
+  "rate|600L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 6.0
+  },
+  "rate|600L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 600,
+   "snr_db": 8.0
+  },
+  "rate|75L|2ms|1Hz|-2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": -2.0
+  },
+  "rate|75L|2ms|1Hz|-4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": -4.0
+  },
+  "rate|75L|2ms|1Hz|0dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 0.0
+  },
+  "rate|75L|2ms|1Hz|10dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 10.0
+  },
+  "rate|75L|2ms|1Hz|12dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 12.0
+  },
+  "rate|75L|2ms|1Hz|14dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 14.0
+  },
+  "rate|75L|2ms|1Hz|16dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 16.0
+  },
+  "rate|75L|2ms|1Hz|18dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 18.0
+  },
+  "rate|75L|2ms|1Hz|20dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 20.0
+  },
+  "rate|75L|2ms|1Hz|22dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 22.0
+  },
+  "rate|75L|2ms|1Hz|24dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 24.0
+  },
+  "rate|75L|2ms|1Hz|26dB": {
+   "bits": 24576,
+   "channels": 6,
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "errors": 0,
+   "experiment": "rate",
+   "frames": 12,
+   "frames_ok": 12,
+   "interleave": "long",
+   "rate": 75,
+   "seconds": 382.94,
+   "snr_db": 26.0
+  },
+  "rate|75L|2ms|1Hz|2dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 2.0
+  },
+  "rate|75L|2ms|1Hz|4dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 4.0
+  },
+  "rate|75L|2ms|1Hz|6dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 6.0
+  },
+  "rate|75L|2ms|1Hz|8dB": {
+   "delay_ms": 2.0,
+   "doppler_hz": 1.0,
+   "experiment": "rate",
+   "interleave": "long",
+   "rate": 75,
+   "snr_db": 8.0
+  }
+ }
+}
