@@ -319,6 +319,12 @@ against Table XVI.
     clean round, and jumping down only after real losses, took that run from 437 to 780 bps
     end to end. Feedback needs short data transmissions (here 6 blocks) and polls for lost
     status replies.
+    The playground notebook's rise-and-fall run (20 dB to 6 and back, 14 kB) shows the
+    policy's next limits: a round of six blocks lasts 14 s at 1200L but 82 s at 150L, so
+    decisions arrive late exactly when the rate is low (a 150L round chosen at 6 dB was
+    sent while the SNR climbed back to 20), and one rung per clean round makes recovery
+    slow (about 200 s from 150L back to 2400L). Next to try: rounds sized in seconds rather
+    than blocks, and upward jumps of more than one rung after a clearly better estimate.
   - Conditions that change: `TimeVaryingChannel` (our extension of Appendix E, identical
     to it with constant schedules) carries a whole toystack session on one continuous
     channel, with SNR and path powers following straight-line or random-walk (Brownian
@@ -384,7 +390,8 @@ attributes; it is the one change to modem code.
 
 Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough's static
 figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
-(4) the playground notebook; (5) animations, the demodulator trace last.
+(4) the playground notebook; (5) animations, the demodulator trace last. Steps 1-4 are
+done (2026-10-14).
 
 Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixed:
 - **A mode misread from one faded preamble segment.** A 1200S message (5 Hz, 14 dB) was

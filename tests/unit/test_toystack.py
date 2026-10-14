@@ -86,6 +86,21 @@ def test_a_pattern_end_to_end_with_recordings(tmp_path):
     assert not any("clipped" in n for n in notes)
 
 
+def test_the_timeline_places_each_transmission_where_the_channel_carried_it():
+    """The timeline the playground notebook plots: one entry per transmission, in order,
+    never overlapping, separated by the assumed gaps, with the log's counts."""
+    air, _ = toy.chat(snr_db=20.0, quiet=True)
+    tl = air.timeline
+    assert [e["sender"] for e in tl] == ["A", "B", "A"]
+    assert tl[0]["start_s"] == toy.LEAD_S
+    for before, after in zip(tl, tl[1:], strict=False):
+        gap = after["start_s"] - (before["start_s"] + before["seconds"])
+        assert abs(gap - (toy.TAIL_S + toy.TURNAROUND_S)) < 1e-3  # hang time, then turn round
+    assert [(e["sent"], e["received"]) for e in tl] == [(e[1], e[2]) for e in air.log]
+    assert all(e["mode"] == "1200S" and e["rate"] == 1200 for e in tl)
+    assert all(e["snr_db"] == 20.0 and e["measured_db"] is not None for e in tl)
+
+
 def test_bulk_rebuilds_the_file_through_losses():
     """2400L well below its Table XVI SNR loses frames; the fountain code still delivers."""
     _, result = toy.bulk(rate=2400, snr_db=10.0, size=2_000, quiet=True)

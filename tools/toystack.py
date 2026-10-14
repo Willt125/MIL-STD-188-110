@@ -204,6 +204,7 @@ class Air:
         self.turns = 0
         self.last_sender = None
         self.log = []  # (label, frames sent, frames received, seconds, payload bytes)
+        self.timeline = []  # one dict per transmission, for plotting (docs/playground.py)
         self.clean, self.heard = [], []
 
     def say(self, text: str) -> None:
@@ -259,6 +260,20 @@ class Air:
             + (f" ({bad} damaged sync hits)" if bad else "")
         )
         self.log.append((label, len(frames), len(got), seconds, payload))
+        self.timeline.append(
+            {
+                "sender": NAMES[sender],
+                "label": label,
+                "mode": str(m),
+                "rate": m.rate,
+                "start_s": start_s,
+                "seconds": seconds,
+                "sent": len(frames),
+                "received": len(got),
+                "snr_db": snr,  # the channel's, mid-transmission
+                "measured_db": self.measured_snr_db,  # the receiver's estimate (None: unheard)
+            }
+        )
         return got
 
     def save_wav(self, out_dir: str, name: str) -> list:
