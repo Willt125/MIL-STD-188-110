@@ -386,15 +386,27 @@ Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough'
 figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
 (4) the playground notebook; (5) animations, the demodulator trace last.
 
-Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), for later work:
+Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixed:
 - **A mode misread from one faded preamble segment.** A 1200S message (5 Hz, 14 dB) was
-  received as 75S: D1 = 6 read as 7. Segments that disagree on D1/D2 are taken as "another
+  received as 75S: D1 = 6 read as 7. Segments that disagreed on D1/D2 were taken as "another
   mode's", never as evidence against the first reading, and a short preamble's count needs
-  no confirmation. A vote over the segments' D1/D2 would catch it.
-- **A message abandoned after one long fade.** A 1200Z message (0.5 Hz, 20 dB) was declared
-  "signal lost" in a slow fade and never resumed: 59 s of it discarded. Loss of signal
-  could keep the demodulator waiting for the signal to return, for a while, before
-  ending the message.
+  no confirmation. *Fixed:* the following segments whose count fits now vote on D1/D2; the
+  majority wins, and a tie waits for the next segment (`PreambleSearch._refine_and_read`).
+- **A message lost to a path swap.** A 1200Z message (0.5 Hz, 20 dB) was declared "signal
+  lost" after 1 s and the rest discarded. Not a fade (the total power never fell below
+  -8 dB): through the preamble the first path was 11-13 dB below the second, so tap 0 was
+  put on the second; when the paths swapped power, the first was 5 symbols before tap 0,
+  outside the equaliser's span, the decisions failed, and the delay profile, fitted to
+  those decisions, never showed the path that would have moved tap 0. *Fixed:* in the data
+  phase a second delay profile comes from the probes alone (`_update_probe_profile`), which
+  does not depend on the decisions; when 15% of its power lies before the equaliser's span,
+  tap 0 moves to its leading edge, and it vetoes the slow decision-fitted profile's move
+  back (`_probe_check`). Its leading edge is not used otherwise: the probe repeats with the
+  scrambler, so its correlation has steady sidelobes up to about -10 dB (used alone, it
+  lost a 300L message to one). On fixed paths swapping in 0.5-4 s (2 and 5 ms, 20 dB,
+  20-s messages), 2400L had lost all eight cases and 1200L the fastest 5-ms one; now none
+  is lost. A shorter profile memory alone (1 or 0.5 s instead of 2 s) rescued only the
+  slower swaps, and on random Watterson channels changed nothing, so it stays at 2 s.
 - The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
   (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
 

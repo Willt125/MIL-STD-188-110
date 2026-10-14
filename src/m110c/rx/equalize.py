@@ -53,6 +53,10 @@ Timing, carrier, alignment
       10 dB of the strongest in the profile), so delayed paths land on postcursor taps
       whichever path the acquisition locked to. When the profile shows an earlier path, or
       the first one has faded out, the numbering moves by whole symbols (:meth:`_realign`).
+      In the data phase a second profile, from the probes alone
+      (:meth:`_update_probe_profile`), checks it (:meth:`_probe_check`): a path rising
+      before the equaliser's span makes the decisions fail, and a profile fitted to them
+      would never show it.
     * Timing: a proportional-integral loop keeps the strongest path's peak on a tap. The
       detector is first order in the error (:func:`peak_offset`); when fading makes another
       path the strongest, the reference jumps with it rather than counting as an error. So
@@ -90,6 +94,7 @@ ANCHOR_SYMBOLS = 256  # known symbols for the first, wide channel estimate
 LEADING_EDGE_DB = 10.0
 SUPPORT_DB = 15.0  # taps within this of the strongest count as "where the channel is"
 PROFILE_SECONDS = 2.0  # averaging time of the power-delay profile
+EARLY_SHARE = 0.15  # probe-profile power before the equaliser's span that moves tap 0
 # Loop bandwidths.
 TIMING_BANDWIDTH_HZ = 0.2
 TRAINING_TIMING_HZ = 2.0  # faster while all symbols are known, to learn a clock offset
@@ -324,6 +329,7 @@ class EqualizingDemodulator:
         # Channel state.
         self.profile = None  # PDP over the wide span
         self.set_profile = None  # 75 bps: set-correlation energy over the wide span
+        self.probe_profile = None  # data phase: probe-correlation PDP over the wide span
         self._estimates = deque(maxlen=2)  # (centre symbol, h, noise variance)
         self._peak_reference = None  # where the strongest path's peak should be (taps)
         self._clock = LineFit()  # (symbol, arrival time) for the clock-offset estimate
@@ -518,12 +524,15 @@ class EqualizingDemodulator:
                 output = detect(k0, k1, commit=True)
                 if not self.mode.is_75bps:  # 75 bps has no probes: keep the fit's fraction
                     fraction = self._probe_fraction(k0, k1)
+                    self._update_probe_profile(k0, k1)
             else:  # nothing received: zero symbols with "infinite" variance
                 output = np.zeros(k1 - k0, complex), np.full(k1 - k0, 1e6)
                 fraction = 0.0
         # SNR = signal / noise = f / (1 - f), for f the signal's share of the power.
         self.unit_snr_db.append(_db(fraction / (1 - fraction)) if fraction < 1 else float("inf"))
         edge = leading_edge(self.profile, self.wide)
+        if self.probe_profile is not None:
+            edge = self._probe_check(edge)
         confirmed = True
         if self.mode.is_75bps and not training:
             # No probes: the profile above comes from decided symbols, and in a deep fade it
@@ -639,6 +648,8 @@ class EqualizingDemodulator:
         self.profile = _shift(self.profile, edge)
         if self.set_profile is not None:
             self.set_profile = _shift(self.set_profile, edge)
+        if self.probe_profile is not None:
+            self.probe_profile = _shift(self.probe_profile, edge)
         self._estimates = deque(((c, _shift(h, edge), n) for c, h, n in self._estimates), maxlen=2)
 
     def _h_at(self, k: float) -> np.ndarray:
@@ -737,6 +748,50 @@ class EqualizingDemodulator:
         correlations = demap.set_correlations(z / rotation, self.mode, set_index)[0]
         pattern = demap.set_patterns(self.mode, set_index, [int(np.argmax(correlations))])[0]
         return pattern * rotation
+
+    def _update_probe_profile(self, k0: int, k1: int) -> None:
+        """Data phase: the delay profile from the probes alone, over the wide span.
+
+        The correlation of :meth:`_probe_fraction`, taken at every tap of the wide span:
+        |c_j|^2 less the data's share, (received power)/P, is the power of tap j whatever
+        the decisions, so a path rising outside the equaliser's span shows here even when it
+        has made the decisions fail. It starts from the profile at the end of the preamble.
+        """
+        probe = np.arange(k0 + self.mode.unknown_per_frame, k1)
+        known = self._sym[probe - self._sym_start]
+        r = self._observations(probe[:, None] + self.wide[None, :])
+        c = known.conj() @ r / probe.size
+        power = float(np.mean(np.abs(r) ** 2))
+        excess = np.abs(c) ** 2 - power / probe.size
+        memory = np.exp(-self._unit_length() / (PROFILE_SECONDS * T.SYMBOL_RATE))
+        start = self.profile if self.probe_profile is None else self.probe_profile
+        self.probe_profile = memory * start + (1 - memory) * excess
+
+    def _probe_check(self, edge: int) -> int:
+        """Data phase: check the realignment the decision-fitted profile asks for (``edge``)
+        against the probe profile, and return the one to make.
+
+        The probe profile sees what the decisions miss: a path rising before the
+        equaliser's span makes the decisions fail, and the decision-fitted profile then
+        never shows it. So when a large share (``EARLY_SHARE``) of the probe profile's
+        power lies before tap -A, tap 0 moves to the probe profile's leading edge. And
+        after such a move the decision-fitted profile, which is slow, still sees the old
+        path as the strong one and takes the new tap 0 for a faded path: a move later is
+        made only if the probes see no path at tap 0 either.
+
+        Its leading edge is not used otherwise: the probe correlation has sidelobes. The
+        probe repeats with the scrambler, every four frames at 1200 bps and below, and a
+        strong path shows through the overlap with the neighbouring frames' probes as a
+        steady false path up to about -10 dB, 10-30 symbols away (a 300 bps message on a
+        5-ms channel was lost to such a phantom).
+        """
+        power = np.maximum(self.probe_profile, 0)
+        if power[self.wide < -self.a].sum() >= EARLY_SHARE * power.sum():
+            return leading_edge(self.probe_profile, self.wide)
+        near = power[np.abs(self.wide) <= 1]
+        if edge >= 3 and near.max() >= power.max() * 10 ** (-LEADING_EDGE_DB / 10):
+            return 0
+        return edge
 
     def _probe_fraction(self, k0: int, k1: int) -> float:
         """The signal's share of the received power in a data frame, from its probe alone.

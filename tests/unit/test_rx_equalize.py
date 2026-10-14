@@ -12,6 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from m110c.channel.awgn import add_awgn
 from m110c.channel.impairments import clock_offset, fractional_delay
 from m110c.channel.watterson import ChannelSpec, WattersonChannel
 from m110c.modulate import modulate, rrc_taps
@@ -434,6 +435,29 @@ def test_a_late_acquired_path_12_symbols_after_the_first():
     assert out == msg and len(rx.messages) == 1
 
 
+@pytest.mark.parametrize("rate, delay_ms", [(2400, 2.0), (1200, 5.0)])
+def test_paths_that_swap_in_half_a_second(rate, delay_ms):
+    """The first path 15 dB below the second through the preamble, so the receiver aligns
+    tap 0 on the second; then, half a second into the data, the two swap power in 0.5 s.
+    The first path, now the strong one, is 4.8 or 12 symbols before tap 0, outside the
+    equaliser's span (-A), so its decisions fail, and a delay profile fitted to them never
+    shows the path: the receiver lost the message (the sweep's 1200 bps, 0.5 Hz point lost
+    a whole message this way). The profile from the probes alone shows it, and tap 0 moves
+    (and stays: the decision-fitted profile, slower, would move it back)."""
+    m = mode(rate, "long")
+    msg = message(rate * 10 // 8)
+    x = signal(m, msg)
+    t = np.arange(x.size) / FS
+    t0 = 4000 / FS + m.preamble_symbols / T.SYMBOL_RATE + 0.5
+    ramp = np.clip((t - t0) / 0.5, 0, 1)
+    first_db, second_db = -15 + 15 * ramp, -15 * ramp
+    late = np.roll(x, int(delay_ms * 1e-3 * FS))
+    y = 10 ** (first_db / 20) * x + 10 ** (second_db / 20) * 1j * late
+    y = add_awgn(y, 20.0, FS, np.random.default_rng(5), signal_power=0.16)
+    out, rx = receive(y)
+    assert out == msg and len(rx.messages) == 1
+
+
 @pytest.mark.slow
 def test_75bps_on_the_table_xvi_channel_at_its_snr():
     """75L on 2 paths, 5 ms, 5 Hz at 2 dB, the Table XVI point: all 16 channels decode
@@ -514,3 +538,20 @@ def test_75bps_minute_long_messages_that_used_to_lose_lock(seed, failure):
     )
     out, rx = receive(y, [9600])
     assert out == msg and len(rx.messages) == 1 and rx.messages[0].eom_found, failure
+
+
+@pytest.mark.slow
+def test_a_probe_sidelobe_does_not_move_tap_0():
+    """300L for a minute on two 5-ms paths (5 Hz, 7 dB), the channel and message of a check
+    on fresh seeds (tools/sweep.py's seeding). The probe repeats every four frames, so its
+    correlation with the neighbouring frames' probes put a steady false path 16 symbols
+    before tap 0, at about -10 dB, while the paths were strong; taking the probe profile's
+    leading edge moved tap 0 onto it and lost half the message. Only power before the
+    equaliser's span, in a large share, may move tap 0."""
+    m = mode(300, "long")
+    seed = 977_155_004
+    msg = bytes(np.random.default_rng(seed).integers(0, 256, 2048, dtype=np.uint8))
+    x = signal(m, msg, lead=4000, tail=9600)
+    y = WattersonChannel(ChannelSpec(2, 5.0, 5.0, 7.0), seed=seed + 7).process(x)
+    out, rx = receive(y, [9600])
+    assert out == msg and len(rx.messages) == 1
