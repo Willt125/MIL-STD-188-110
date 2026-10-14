@@ -53,6 +53,8 @@ class Message:
     clock_ppm: float = 0.0
     end_sample: int = 0
     notes: list[str] = field(default_factory=list)
+    # With Receiver(trace=True): the demodulator's state after each unit (TraceUnit).
+    trace: list = field(default_factory=list)
 
 
 class Receiver:
@@ -68,6 +70,7 @@ class Receiver:
         threshold: float | None = None,
         equalize: bool = True,
         voice: bool = False,
+        trace: bool = False,
     ):
         self.sample_rate = sample_rate
         self.carrier_hz = carrier_hz
@@ -81,6 +84,9 @@ class Receiver:
         # Also receive 2400 bps digital voice (INT-019). Its payload is a vocoder's bit
         # stream, so it is always delivered as raw synchronous bits, never async-deframed.
         self.voice = voice
+        # Record each message's demodulator state per unit in Message.trace (for figures and
+        # diagnosis; memory grows with the message). Equalising demodulator only.
+        self.trace = trace
         self.messages: list[Message] = []
         self._message: Message | None = None
         self._raw = np.zeros(0, dtype=complex)  # recent input
@@ -179,7 +185,10 @@ class Receiver:
         # stream itself began: the demodulator treats earlier samples as zero anyway.
         self._demod_start = max(int(np.floor(detection.segment_start)) - 8, self._raw_start)
         demodulator = EqualizingDemodulator if self.equalize else TrackingDemodulator
-        self._demod = demodulator(m, detection, self.sample_rate, start_index=self._demod_start)
+        options = {"trace": self._message.trace} if self.trace and self.equalize else {}
+        self._demod = demodulator(
+            m, detection, self.sample_rate, start_index=self._demod_start, **options
+        )
         self._decoder = DataDecoder(m)
         self._eom = EomDetector()
         self._async = AsyncDecoder(self.async_format) if self.async_format and not m.voice else None

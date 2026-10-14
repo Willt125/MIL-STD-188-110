@@ -12,8 +12,9 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from m110c import scrambler
 from m110c.channel.awgn import add_awgn
-from m110c.channel.impairments import clock_offset, fractional_delay
+from m110c.channel.impairments import clock_offset, fractional_delay, frequency_offset
 from m110c.channel.watterson import ChannelSpec, WattersonChannel
 from m110c.modulate import modulate, rrc_taps
 from m110c.rx import equalize as E
@@ -418,6 +419,62 @@ def test_back_to_back_short_preambles_in_small_chunks(chunk):
     x = np.concatenate([np.zeros(3000, complex), a, b, np.zeros(9600, complex)])
     out, rx = receive(x, [chunk])
     assert out == b"first messagesecond" and len(rx.messages) == 2
+
+
+# --- The optional trace (S10) ------------------------------------------------------------
+
+
+def test_the_trace_is_off_by_default_and_changes_nothing():
+    m = mode(1200, "short")
+    msg = message(300)
+    x = two_paths(signal(m, msg), 2.0, gains=(1.0, 0.6j))
+    plain, rx = receive(x)
+    traced, rx_traced = receive(x, trace=True)
+    assert plain == traced == msg
+    assert rx.messages[0].trace == []
+    assert len(rx_traced.messages[0].trace) > 10
+
+
+def test_the_trace_records_what_the_loops_measured():
+    """A transmitter 20 Hz high and 300 ppm fast, through two fixed paths: the trace's
+    carrier and clock settle on those values, its units follow each other without gaps
+    (two-slot units in the preamble, then frames), and the data symbols' estimates,
+    descrambled, sit on the 8-PSK points."""
+    m = mode(2400, "short")
+    msg = message(1500)
+    x = clock_offset(signal(m, msg), 300.0)
+    x = frequency_offset(two_paths(x, 2.0, gains=(1.0, 0.5j)), 20.0, FS)
+    out, rx = receive(x, trace=True)
+    assert out == msg
+    trace = rx.messages[0].trace
+    starts = [u.symbol for u in trace]
+    lengths = np.diff(starts)
+    assert np.all(lengths > 0)
+    data = [u for u in trace if not u.training]
+    assert data and all(not u.training for u in trace[trace.index(data[0]) :])
+    assert set(np.diff([u.symbol for u in data])) == {m.frame_symbols}
+    # (The demodulator runs on into the silence after the message until it declares the
+    # signal lost; the trace records those units too, with nothing in them.)
+    signal_units = [u for u in data if u.snr_db > 10]
+    assert len(signal_units) < len(data)
+    late = signal_units[len(signal_units) // 2 :]
+    carrier = T.CARRIER_HZ * (1 + 300e-6) + 20  # the fast clock raises the carrier too
+    assert np.median([u.frequency_hz for u in late]) == pytest.approx(carrier, abs=0.1)
+    assert np.median([u.clock_ppm for u in late]) == pytest.approx(300, abs=60)
+    assert np.all(np.diff([u.time_s for u in trace]) > 0)
+    z = np.concatenate([u.data for u in late])
+    assert z.size == len(late) * m.unknown_per_frame
+    nearest = np.exp(1j * np.pi / 4 * np.round(np.angle(z) / (np.pi / 4)))
+    assert np.max(np.abs(z - nearest)) < 0.35
+    # ... and they are the symbols sent, before scrambling.
+    sent = transmit_bytes(msg, m)
+    first = rx.messages[0].detection.data_start_symbol  # the trace's data phase starts here
+    preamble = m.preamble_symbols  # the data phase follows it
+    for u in late[:5]:
+        k = np.arange(u.symbol - first, u.symbol - first + m.unknown_per_frame)
+        expected = (sent[preamble + k].astype(int) - scrambler.data_sequence(k[0], k.size)) % 8
+        assert np.array_equal(np.round(np.angle(u.data) / (np.pi / 4)).astype(int) % 8, expected)
+    assert all(u.h.shape == (E.PRECURSOR_TAPS + E.POSTCURSOR_TAPS + 1,) for u in trace)
 
 
 # --- Tracking through fades (M11) --------------------------------------------------------

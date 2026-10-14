@@ -390,8 +390,10 @@ attributes; it is the one change to modem code.
 
 Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough's static
 figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
-(4) the playground notebook; (5) animations, the demodulator trace last. Steps 1-4 are
-done (2026-10-14).
+(4) the playground notebook; (5) animations, the demodulator trace last. All five are
+done (2026-10-14). The trace is `Receiver(trace=True)`: each message's `trace` lists the
+demodulator's state after every unit (channel estimate, alignment, carrier, clock, unit
+SNR, the data symbols' estimates), off by default and changing nothing when on.
 
 Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixed:
 - **A mode misread from one faded preamble segment.** A 1200S message (5 Hz, 14 dB) was
@@ -414,6 +416,11 @@ Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixe
   20-s messages), 2400L had lost all eight cases and 1200L the fastest 5-ms one; now none
   is lost. A shorter profile memory alone (1 or 0.5 s instead of 2 s) rescued only the
   slower swaps, and on random Watterson channels changed nothing, so it stays at 2 s.
+- Found with the demodulator trace (S10 step 5): the per-frame probe SNR used for loss of
+  signal saturates near 11-12 dB (median, clean 2400S channel at 18 or 30 dB), though its
+  docstring had called it nearly unbiased. Harmless for the -6 dB loss decision; it is not
+  a measurement, and the docs now say so. Worth understanding before anything else uses
+  it (a link layer's SNR report should use the decoder's estimate).
 - The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
   (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
 

@@ -6,7 +6,8 @@ serial-tone waveform (§5.3.2: 75–4800 bps, zero/short/long interleave). It pr
 baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via files or pipes.
 
 - [`docs/walkthrough.ipynb`](docs/walkthrough.ipynb): one message through the modem, block by
-  block, with plots. Start here.
+  block, with plots and animations (the interleaver, the equaliser through fades, the
+  Viterbi decoder's survivors). Start here.
 - [`docs/channel.ipynb`](docs/channel.ipynb): the HF channel (Appendix E's Watterson model and
   our time-varying extension), and why different conditions call for different modes.
 - [`docs/playground.ipynb`](docs/playground.ipynb): what a link layer over 110 has to live

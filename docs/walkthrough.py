@@ -12,17 +12,21 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
-from nbtools import QUICK
+from matplotlib.animation import FuncAnimation
+from nbtools import QUICK, save_gif
 
 from m110c import fec, scrambler, symbols
 from m110c.bits import bits_to_bytes, bytes_to_bits
+from m110c.channel.impairments import clock_offset, frequency_offset
 from m110c.channel.watterson import ChannelSpec, WattersonChannel
-from m110c.interleave import permutation
+from m110c.fec import PREDECESSOR, SIGN1, SIGN2
+from m110c.interleave import fetch_positions, load_positions, permutation
 from m110c.modulate import modulate, rrc_taps
 from m110c.rx.acquire import PreambleSearch
 from m110c.rx.decode import DataDecoder
 from m110c.rx.eom import EomDetector
-from m110c.rx.equalize import EqualizingDemodulator
+from m110c.rx.equalize import PRECURSOR_TAPS, EqualizingDemodulator
+from m110c.rx.receiver import Receiver
 from m110c.spec import mode
 from m110c.spec import tables as T
 from m110c.tx import transmit, transmit_bytes
@@ -93,6 +97,55 @@ ax[1].set_xlabel("bit position in the block")
 plt.tight_layout()
 plt.show()
 print("after deinterleaving, the closest two errors are", np.diff(in_code).min(), "bits apart")
+
+# %% [markdown]
+# The same block as the matrix the standard describes (40 rows by 72 columns at 2400 bps
+# short interleave). Loading: each bit goes 9 rows further down than the last, so a column
+# fills in a scattered order before the next one starts; the colour is the order of
+# loading. Fetching: along diagonals, each next bit one row down and 17 columns left,
+# dimming the cells as they are read. Consecutive bits on the air come from cells loaded
+# far apart.
+
+# %%
+rows, cols = MODE.interleaver_rows, MODE.interleaver_cols
+load_cells = load_positions(rows, cols, MODE.interleaver_load_row_step)
+fetch_cells = fetch_positions(rows, cols, MODE.interleaver_fetch_col_decrement)
+# Slowly through the first column (and the first diagonal), then faster.
+slow = np.arange(5, rows + 1, 5)
+counts = np.concatenate([slow, np.geomspace(2 * rows, rows * cols, 8 if QUICK else 16)])
+counts = np.unique(counts.astype(int))
+fig, ax = plt.subplots(figsize=(7, 4.2))
+order = np.full(rows * cols, np.nan)
+image = ax.imshow(order.reshape(rows, cols), cmap="viridis", vmin=0, vmax=rows * cols)
+shade = ax.imshow(np.zeros((rows, cols, 4)))
+(recent,) = ax.plot([], [], "s", color="white", markersize=2.5, markeredgecolor="black")
+ax.set_xlabel("column")
+ax.set_ylabel("row")
+fig.colorbar(image, ax=ax, label="loaded as bit number", shrink=0.8)
+fig.tight_layout()
+
+
+def draw_interleaver(frame):
+    dimmed = np.zeros((rows * cols, 4))
+    phase, i = divmod(min(frame, 2 * counts.size - 1), counts.size)
+    n, before = counts[i], counts[i - 1] if i else 0
+    if phase == 0:  # loading
+        order[:] = np.nan
+        order[load_cells[:n]] = np.arange(n)
+        new = load_cells[before:n]
+        ax.set_title(f"Loading: {n} of {rows * cols} bits")
+    else:  # fetching
+        dimmed[fetch_cells[:n]] = (1, 1, 1, 0.75)
+        new = fetch_cells[before:n]
+        ax.set_title(f"Fetching: {n} of {rows * cols} bits sent")
+    image.set_data(order.reshape(rows, cols))
+    shade.set_data(dimmed.reshape(rows, cols, 4))
+    shown_new = new[-rows:]  # mark at most one column's or diagonal's worth
+    recent.set_data(shown_new % cols, shown_new // cols)
+    return image, shade, recent
+
+
+save_gif(FuncAnimation(fig, draw_interleaver, frames=2 * counts.size + 4), "interleaver", fps=4)
 
 # %% [markdown]
 # ## 4. Symbol formation, scrambling and framing (§5.3.2.3.6–8)
@@ -414,6 +467,107 @@ for a in ax:
 plt.show()
 
 # %% [markdown]
+# ### The receiver's loops at work
+#
+# `Receiver(trace=True)` keeps what the demodulator knew after each unit (two preamble slots,
+# then one frame): its channel estimate, the carrier frequency and clock it has tracked, and
+# the SNR it measured. Here a longer message, from a transmitter 15 Hz off frequency and
+# with its clock 200 ppm fast, crosses the same channel. The channel estimate shows the two
+# paths 2 ms (about five taps) apart, fading independently; the loops settle on the offsets
+# (dashed; the fast clock raises the carrier by 0.36 Hz too) within the preamble and hold
+# them through the fades, the carrier within a few tenths of a hertz. The bottom panel is
+# each unit's quick signal check: from the known preamble at first, then from each frame's
+# 16 probe symbols (thin line; the thick one is a running median). It exists to notice
+# that the signal has gone (below -6 dB for a second), and it is not an SNR measurement:
+# it saturates near 11-12 dB even on a clean channel. The decoder's estimate, printed
+# below, is the measurement.
+
+# %%
+long_message = MESSAGE * (3 if QUICK else 12)
+x_long = clock_offset(modulate(transmit_bytes(long_message, MODE)), 200.0)
+x_long = np.concatenate([np.zeros(4000, complex), x_long, np.zeros(9600, complex)])
+x_long = frequency_offset(x_long, 15.0, 9600)
+y_long = WattersonChannel(ChannelSpec(2, 2.0, 1.0, 18.0), seed=3).process(x_long)
+traced = Receiver(trace=True)
+got = traced.process(y_long) + traced.finish()
+print(
+    "received intact:",
+    got == long_message,
+    "; decoder's SNR estimate:",
+    round(traced.messages[0].snr_db, 1),
+    "dB (channel: 18 dB, fading)",
+)
+end_s = (x_long.size - 9600) / 9600  # where the signal ends (the silence after it is not shown)
+units = [u for u in traced.messages[0].trace if u.time_s < end_s]
+times = np.array([u.time_s for u in units])
+offsets = np.arange(len(units[0].h)) - PRECURSOR_TAPS  # taps -A..B
+taps = np.array([np.abs(u.h) for u in units]).T
+fig, ax = plt.subplots(
+    4, 1, figsize=(8, 7), sharex=True, gridspec_kw={"height_ratios": [2, 1, 1, 1]}
+)
+ax[0].pcolormesh(times, offsets, 20 * np.log10(taps + 1e-3), vmin=-30, vmax=0, cmap="magma")
+ax[0].set_ylim(-4, 12)
+ax[0].set_ylabel("tap (symbols)")
+ax[0].set_title("Channel estimate |h| (dB) per unit")
+ax[1].plot(times, [u.frequency_hz - T.CARRIER_HZ for u in units], color="C0")
+ax[1].axhline(15 + T.CARRIER_HZ * 200e-6, color="0.6", ls="--", lw=1)
+ax[1].set_ylabel("carrier\noffset (Hz)")
+ax[2].plot(times, [u.clock_ppm for u in units], color="C1")
+ax[2].axhline(200, color="0.6", ls="--", lw=1)
+ax[2].set_ylim(-100, 400)
+ax[2].set_ylabel("clock (ppm)")
+snr_units = np.array([u.snr_db for u in units])
+smooth = [np.nanmedian(snr_units[max(0, i - 6) : i + 7]) for i in range(snr_units.size)]
+ax[3].plot(times, snr_units, color="C2", lw=0.6, alpha=0.4)
+ax[3].plot(times, smooth, color="C2", lw=2)
+ax[3].set_ylabel("unit SNR\ncheck (dB)")
+ax[3].set_xlabel("time (s)")
+first_data = next(u.time_s for u in units if not u.training)
+for a in ax:
+    a.axvline(first_data, color="0.3", lw=0.8, ls=":")
+ax[1].text(first_data, ax[1].get_ylim()[1], " data phase", va="top", fontsize=8)
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# The equaliser through those fades, one frame at a time: the frame's 32 data symbols
+# after equalising and descrambling (the last few frames fainter), beside the channel it
+# was equalised with. When both paths fade together the points spread, and the equaliser
+# reports a larger error variance for them, so the decoder trusts them less.
+
+# %%
+data_units = [u for u in units if not u.training]
+shown = data_units[: 40 if QUICK else 150 : 2]
+fig, (ax_c, ax_h) = plt.subplots(1, 2, figsize=(8, 3.8), gridspec_kw={"width_ratios": [1, 1.3]})
+ring = np.exp(1j * np.pi / 4 * np.arange(8))
+(older,) = ax_c.plot([], [], ".", color="C0", alpha=0.25, markersize=4)
+(current,) = ax_c.plot([], [], ".", color="C0", markersize=7)
+ax_c.plot(ring.real, ring.imag, "+", color="0.4", markersize=10)
+ax_c.set_xlim(-1.8, 1.8)
+ax_c.set_ylim(-1.8, 1.8)
+ax_c.set_aspect("equal")
+bars = ax_h.bar(offsets, np.zeros(offsets.size), color="C1")
+ax_h.set_xlim(-4.5, 12.5)
+ax_h.set_ylim(0, 1.6)
+ax_h.set_xlabel("tap (symbols)")
+ax_h.set_title("Channel estimate |h|")
+fig.tight_layout()
+
+
+def draw_equaliser(i):
+    u = shown[i]
+    past = np.concatenate([v.data for v in shown[max(0, i - 4) : i]] or [np.zeros(0)])
+    older.set_data(past.real, past.imag)
+    current.set_data(u.data.real, u.data.imag)
+    for bar, value in zip(bars, np.abs(u.h), strict=True):
+        bar.set_height(value)
+    ax_c.set_title(f"t = {u.time_s:.2f} s, SNR {u.snr_db:4.1f} dB")
+    return older, current, *bars
+
+
+save_gif(FuncAnimation(fig, draw_equaliser, frames=len(shown)), "equaliser", fps=8)
+
+# %% [markdown]
 # ## 10. Decoding
 #
 # The equalised symbols go back through the chain in reverse: descramble, soft-demap (each
@@ -429,6 +583,81 @@ received = bits_to_bytes(bits[: bits.size // 8 * 8])
 print("EOM found:", eom.found, "; SNR on the probes:", round(decoder.snr_db, 1), "dB")
 print("bytes:", len(received), "; identical to the message:", received == MESSAGE)
 print(received[:58].decode())
+
+# %% [markdown]
+# ### Inside the Viterbi decoder
+#
+# The decoder keeps, for each of the code's 64 states, the single best path into it (its
+# *survivor*) and that path's metric, updated for every pair of soft bits by
+# add-compare-select: the short loop below, with the code's trellis from `m110c.fec`. Traced
+# back, the 64 survivors disagree about the last few steps but merge further back: before
+# the merge point every survivor agrees, so those bits are settled whatever comes next.
+# That is why a streaming decoder can release bits a fixed depth behind the newest input
+# (`ViterbiDecoder(traceback_depth=96)`, several times the merge distance). Midway, eight
+# soft bits are wiped out, as by a short fade: the survivors stay split for longer there,
+# then merge again on the right path.
+
+# %%
+rng_v = np.random.default_rng(4)
+n_steps = 30 if QUICK else 60
+info = rng_v.integers(0, 2, n_steps).astype(np.uint8)
+soft = (
+    1.0 - 2.0 * fec.ConvolutionalEncoder().encode(info) + 0.6 * rng_v.standard_normal(2 * n_steps)
+)
+soft[n_steps - 8 : n_steps] = 0.3 * rng_v.standard_normal(8)  # a fade: nothing to go on
+metrics = np.full(64, -np.inf)
+metrics[0] = 0.0
+choices = []
+for s1, s2 in soft.reshape(-1, 2):  # add-compare-select, all 64 states at once
+    candidates = metrics[PREDECESSOR] + s1 * SIGN1 + s2 * SIGN2
+    choice = np.argmax(candidates, axis=1)
+    metrics = candidates[np.arange(64), choice]
+    choices.append((choice, metrics.copy()))
+
+
+def survivors(t):
+    """Every state's survivor through step t, as states (64 x t+1)."""
+    paths = np.zeros((64, t + 1), dtype=int)
+    paths[:, t] = np.arange(64)
+    for i in range(t, 0, -1):
+        choice = choices[i - 1][0]
+        paths[:, i - 1] = PREDECESSOR[paths[:, i], choice[paths[:, i]]]
+    return paths
+
+
+fig, ax = plt.subplots(figsize=(8, 3.6))
+ax.axvspan(n_steps / 2 - 4, n_steps / 2, color="0.9")
+ax.text(n_steps / 2 - 2, 66, "fade", ha="center", fontsize=8)
+lines = [ax.plot([], [], color="0.6", lw=0.6)[0] for _ in range(64)]
+(best_line,) = ax.plot([], [], color="C0", lw=2)
+merge_line = ax.axvline(0, color="C3", lw=1)
+ax.set_xlim(0, n_steps)
+ax.set_ylim(-2, 70)
+ax.set_xlabel("trellis step (one per decoded bit)")
+ax.set_ylabel("state")
+fig.tight_layout()
+
+
+def draw_viterbi(t):
+    t = t + 1
+    paths = survivors(t)
+    for line, path in zip(lines, paths, strict=True):
+        line.set_data(np.arange(t + 1), path)
+    best = paths[int(np.argmax(choices[t - 1][1]))]
+    best_line.set_data(np.arange(t + 1), best)
+    agree = np.all(paths == paths[0], axis=0)
+    merge = int(np.max(np.flatnonzero(agree))) if agree.any() else 0
+    merge_line.set_xdata([merge, merge])
+    ax.set_title(f"64 survivors after {t} steps: settled up to step {merge}")
+    return (*lines, best_line, merge_line)
+
+
+steps_shown = range(1, n_steps, 2)  # every other step keeps the file small
+save_gif(FuncAnimation(fig, draw_viterbi, frames=steps_shown), "viterbi", fps=3)
+best_path = survivors(n_steps)[int(np.argmax(metrics))]
+decided = (best_path[1:] >> 5).astype(np.uint8)  # the input bit that led into each state
+print("bits decided from the merged path:", decided[: n_steps - 10], sep="\n")
+print("errors against the bits sent:", int(np.sum(decided[: n_steps - 10] != info[: n_steps - 10])))
 
 # %% [markdown]
 # ## 11. What the coding buys
