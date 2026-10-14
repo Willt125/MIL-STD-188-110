@@ -217,6 +217,9 @@ print(received[:58].decode())
 # %% [markdown]
 # ## Where to go next
 #
+# - `docs/channel.ipynb`: the HF channel itself, and why different conditions call for
+#   different modes.
+# - `docs/playground.ipynb`: what a link layer over 110 has to live with (experiments).
 # - `docs/CONFORMANCE.md`: every Table XVI row, run for a million bits.
 # - `docs/PERFORMANCE.md`: how the receiver was designed and measured, including what did
 #   not work.
