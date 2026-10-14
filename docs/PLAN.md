@@ -304,6 +304,13 @@ against Table XVI.
     damaged frame costs only itself. Link layers on top are existing open protocols chosen for
     110's behaviour (half-duplex, seconds per turnaround, long one-way transmissions):
     AX.25 UI frames, store-and-forward, erasure-coded broadcast. Not TCP end to end.
+  - `tools/toystack.py` is the playground for these choices: six traffic patterns as real
+    transmissions through the channel simulator and the receiver. First results (one
+    channel realisation each, 2 paths, 2 ms, 1 Hz): every transmission costs at least 1.2 s,
+    so control traffic belongs inside data transmissions; long interleave never takes less
+    than 9.6 s, too long for short messages; and at 11 dB a 16-kB file arrived faster at
+    1200L, with no losses (875 bps end to end), than at 2400L repaired by a fountain code
+    (about 560-670 bps). Choosing the 110 mode from measured SNR matters more than repair.
 
   **[DECIDED]** No STANAG 5066, now or later: its current editions are not publicly
   distributable, and earlier ones differ on the air (the CRCs changed after the 1.0.2 draft).
