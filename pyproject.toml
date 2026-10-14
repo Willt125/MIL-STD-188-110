@@ -19,7 +19,7 @@ m110c-chan = "m110c.cli:main_chan"
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6"]
 dev = ["pytest>=7", "hypothesis>=6", "ruff", "matplotlib"]
-# docs/walkthrough.ipynb: python tools/build_notebook.py
+# the notebooks in docs/: python tools/build_notebook.py
 notebook = ["matplotlib", "nbformat", "nbclient", "ipykernel"]
 
 [tool.hatch.build.targets.wheel]

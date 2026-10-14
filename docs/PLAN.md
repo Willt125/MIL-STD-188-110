@@ -319,6 +319,12 @@ against Table XVI.
     clean round, and jumping down only after real losses, took that run from 437 to 780 bps
     end to end. Feedback needs short data transmissions (here 6 blocks) and polls for lost
     status replies.
+    The playground notebook's rise-and-fall run (20 dB to 6 and back, 14 kB) shows the
+    policy's next limits: a round of six blocks lasts 14 s at 1200L but 82 s at 150L, so
+    decisions arrive late exactly when the rate is low (a 150L round chosen at 6 dB was
+    sent while the SNR climbed back to 20), and one rung per clean round makes recovery
+    slow (about 200 s from 150L back to 2400L). Next to try: rounds sized in seconds rather
+    than blocks, and upward jumps of more than one rung after a clearly better estimate.
   - Conditions that change: `TimeVaryingChannel` (our extension of Appendix E, identical
     to it with constant schedules) carries a whole toystack session on one continuous
     channel, with SNR and path powers following straight-line or random-walk (Brownian
@@ -335,6 +341,88 @@ against Table XVI.
   (e.g. MS-DMT, a Windows 110A sound-card modem), across mode, interleave and framing.
   Until then, the claim is "symbol-exact with one fielded modem's recording", not
   "interoperable".
+- **S10**: notebooks that explain the standard, the channel and the link-layer experiments
+  (see "Notebooks" below).
+
+### Notebooks (S10)
+
+**[DECIDED]** Three notebooks, each a py:percent script (the source) built into an `.ipynb`
+with outputs by `tools/build_notebook.py`, and each run by the test suite:
+
+1. **`walkthrough`** (exists): the standard, block by block, one message. To add: a ribbon
+   per mode (data/probe pattern, preamble length); preamble anatomy (prefix, D1/D2, count,
+   the countdown); constellations with their bit labels (8-PSK MGD, 1- and 2-bit subsets);
+   scrambling (spectrum of all zeros before and after); the RRC pulse and an eye diagram;
+   the 75-bps sets and their correlation matrix (exceptional sets); a burst of channel
+   errors before and after deinterleaving; coding gain (BER vs SNR, coded and uncoded).
+2. **`channel`** (new): the Watterson model (fading traces, Doppler spectrum vs Appendix E's
+   Gaussian, Rayleigh statistics), the channel's impulse response over time, schedules
+   (lines and walks), Table XVI performance from CONFORMANCE.md's data, and **matching the
+   mode to the conditions**:
+   - interleave vs fade duration: 1200 bps at zero/short/long interleave on 0.5, 1 and
+     5 Hz fading, with a fading trace under the 0.6-s and 4.8-s blocks;
+   - rate vs SNR: goodput of every rate against SNR, and the crossovers that make
+     negotiation worth having;
+   - delay spread vs the probe window (16 symbols, 6.7 ms at 2400 bps): performance
+     against delay spread 0-8 ms;
+   - Doppler spread vs probe density (32/16 frames at 2400 bps, 20/20 at 600): performance
+     against Doppler spread 0.5-10 Hz; and where 75 bps (no probes) fits;
+   - named conditions (ITU-R F.1487's latitude/disturbance table and flutter, values to be
+     checked against the document) with the mode each favours.
+   These are our receiver's results, not limits of the standard, and the section says so.
+   Their data comes from a new `tools/sweep.py` (like `tools/conformance.py`, hours to run)
+   into `docs/data/sweep.json`, which the notebook plots, so the notebook stays fast.
+3. **`playground`** (new): the link-layer experiments of `tools/toystack.py`: frame anatomy,
+   session timelines (who transmits when), the negotiation figure (SNR schedule, measured
+   SNR, mode chosen, losses on one time axis), fountain decoding progress, and payload
+   efficiency against message size per mode (analytic).
+
+**[DECIDED]** Animations are GIFs (matplotlib's Pillow writer), written to `docs/figures/` by
+the build and shown as images: GitHub's notebook viewer strips JavaScript, so in-notebook
+animations would not play there. Kept small (about 1 MB or less each). Candidates: the
+interleaver loading and fetching, Viterbi survivor paths, the equaliser's constellation
+settling, the channel's impulse response fading.
+
+Each notebook script runs quickly by default (CI runs it); heavy figures read precomputed
+data or use a reduced setting. The receiver figures (equaliser, tracking loops) need an
+optional trace from the demodulator, off by default and tested, rather than reading private
+attributes; it is the one change to modem code.
+
+Order: (1) the multi-notebook build, GIF support and tests; (2) the walkthrough's static
+figures; (3) the channel notebook, with `tools/sweep.py` and the mode-matching section;
+(4) the playground notebook; (5) animations, the demodulator trace last. All five are
+done (2026-10-14). The trace is `Receiver(trace=True)`: each message's `trace` lists the
+demodulator's state after every unit (channel estimate, alignment, carrier, clock, unit
+SNR, the data symbols' estimates), off by default and changing nothing when on.
+
+Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixed:
+- **A mode misread from one faded preamble segment.** A 1200S message (5 Hz, 14 dB) was
+  received as 75S: D1 = 6 read as 7. Segments that disagreed on D1/D2 were taken as "another
+  mode's", never as evidence against the first reading, and a short preamble's count needs
+  no confirmation. *Fixed:* the following segments whose count fits now vote on D1/D2; the
+  majority wins, and a tie waits for the next segment (`PreambleSearch._refine_and_read`).
+- **A message lost to a path swap.** A 1200Z message (0.5 Hz, 20 dB) was declared "signal
+  lost" after 1 s and the rest discarded. Not a fade (the total power never fell below
+  -8 dB): through the preamble the first path was 11-13 dB below the second, so tap 0 was
+  put on the second; when the paths swapped power, the first was 5 symbols before tap 0,
+  outside the equaliser's span, the decisions failed, and the delay profile, fitted to
+  those decisions, never showed the path that would have moved tap 0. *Fixed:* in the data
+  phase a second delay profile comes from the probes alone (`_update_probe_profile`), which
+  does not depend on the decisions; when 15% of its power lies before the equaliser's span,
+  tap 0 moves to its leading edge, and it vetoes the slow decision-fitted profile's move
+  back (`_probe_check`). Its leading edge is not used otherwise: the probe repeats with the
+  scrambler, so its correlation has steady sidelobes up to about -10 dB (used alone, it
+  lost a 300L message to one). On fixed paths swapping in 0.5-4 s (2 and 5 ms, 20 dB,
+  20-s messages), 2400L had lost all eight cases and 1200L the fastest 5-ms one; now none
+  is lost. A shorter profile memory alone (1 or 0.5 s instead of 2 s) rescued only the
+  slower swaps, and on random Watterson channels changed nothing, so it stays at 2 s.
+- Found with the demodulator trace (S10 step 5): the per-frame probe SNR used for loss of
+  signal saturates near 11-12 dB (median, clean 2400S channel at 18 or 30 dB), though its
+  docstring had called it nearly unbiased. Harmless for the -6 dB loss decision; it is not
+  a measurement, and the docs now say so. Worth understanding before anything else uses
+  it (a link layer's SNR report should use the decoder's estimate).
+- The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
+  (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
 
 ---
 

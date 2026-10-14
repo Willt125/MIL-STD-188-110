@@ -298,6 +298,61 @@ def test_a_count_with_no_segments_left_to_check_it_stands():
     assert d is not None and d.count == 2 and abs(d.segment_start - 1000) < 0.1
 
 
+def preamble_of(segments, silent=()):
+    """A preamble whose segments carry the (D1, D2, count) listed, with the segments in
+    ``silent`` not sent."""
+    tribits = []
+    for d1, d2, count in segments:
+        cs = [*T.PREAMBLE_FIXED_PREFIX, d1, d2, *symbols.count_symbols(count), 0]
+        tribits += [t for c in cs for t in T.TABLE_XIII[c]]
+    tri = scrambler.scramble(np.array(tribits, np.uint8), scrambler.sync_sequence(0, len(tribits)))
+    x = modulate(tri)
+    for i in silent:
+        x[i * 480 * 4 : (i + 1) * 480 * 4] = 0
+    return np.concatenate([np.zeros(1000, complex), x, np.zeros(3000, complex)])
+
+
+S1200, S75 = mode(1200, "short"), mode(75, "short")
+MISREAD = (*S75.d1_d2, 2)  # one D1/D2 symbol changed: 1200S (6, 5) read as 75S (7, 5)
+
+
+def test_a_misread_mode_is_outvoted_by_the_next_segments():
+    """A 1200S preamble whose first segment reads as 75S (a fade changed one symbol, as in
+    the sweep's interleave|1200S|2ms|5Hz|14dB). Its count is right, and both later
+    segments, with counts that fit it, say 1200S: the majority mode wins, from the first
+    segment. (Before the vote, segments of another mode were skipped, and with nothing left
+    to confirm a count of 2 the 75S reading stood.)"""
+    d = first_detection(preamble_of([MISREAD, (*S1200.d1_d2, 1), (*S1200.d1_d2, 0)]))
+    assert d is not None and d.mode == S1200 and d.count == 2
+    assert abs(d.segment_start - 1000) < 0.1
+
+
+def test_a_tied_vote_waits_for_the_next_segment():
+    """One later segment for each mode reading (the other is silent): no majority, so the
+    first segment is not used; the next one, 1200S with nothing left to contradict it,
+    is."""
+    d = first_detection(preamble_of([MISREAD, (*S1200.d1_d2, 1), (*S1200.d1_d2, 0)], silent=(2,)))
+    assert d is not None and d.mode == S1200 and d.count == 1
+    assert abs(d.segment_start - (1000 + 480 * 4)) < 0.1
+
+
+def test_one_misread_follower_does_not_outvote_a_confirmed_mode():
+    """The reverse: the first segment is right and the next misread. The segment after
+    agrees with the first, which stands."""
+    d = first_detection(preamble_of([(*S1200.d1_d2, 2), MISREAD[:2] + (1,), (*S1200.d1_d2, 0)]))
+    assert d is not None and d.mode == S1200 and d.count == 2
+    assert abs(d.segment_start - 1000) < 0.1
+
+
+def test_another_mode_with_another_count_is_not_a_vote():
+    """A following segment of another mode whose count does not fit belongs to another
+    transmission: it is ignored, as before (here leaving the count of 2 unconfirmed, which
+    stands, as nothing later could check it)."""
+    d = first_detection(preamble_of([(*S1200.d1_d2, 2), (*S75.d1_d2, 2), (*S75.d1_d2, 2)]))
+    assert d is not None and d.mode == S1200 and d.count == 2
+    assert abs(d.segment_start - 1000) < 0.1
+
+
 # --- Fading (M11) -------------------------------------------------------------------------
 
 

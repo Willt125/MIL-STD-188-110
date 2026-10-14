@@ -287,6 +287,14 @@ class PreambleSearch:
             return None
         found, d1, d2, count = fields
         _, residual_hz, prefix_errors = reading
+        # Check the reading against the segments that follow. One that agrees on the mode
+        # must agree on the count too, or the count was misread. One whose count fits this
+        # preamble but whose D1/D2 differ is a vote against this segment's D1/D2: a fade can
+        # change one symbol, and one symbol can turn 1200S (6,5) into 75S (7,5). The first
+        # segment that agrees on both settles it (as before); otherwise the majority mode
+        # wins, and a tie waits for the next segment. (A segment with another mode *and*
+        # another count belongs to some other transmission and is ignored.)
+        votes = {(d1, d2): 1}
         for j in range(1, min(CONFIRM_SEGMENTS, count) + 1):
             after = read_segment(
                 self._z,
@@ -297,18 +305,30 @@ class PreambleSearch:
                 self.sample_rate,
             )
             following = segment_fields(after, CONFIRM_PREFIX_ERRORS, voice=self.voice)
-            if following is None or following[1:3] != (d1, d2):
-                continue  # unreadable (or another mode's): look one segment further
-            if following[3] != count - j:
+            if following is None:
+                continue  # unreadable: look one segment further
+            if following[1:3] == (d1, d2):
+                if following[3] != count - j:
+                    return None  # same mode, count out of step: this count was misread
+                votes[(d1, d2)] += 1
+                break  # confirmed; later segments could not outvote it
+            if following[3] == count - j:
+                votes[following[1:3]] = votes.get(following[1:3], 0) + 1
+        best = max(votes.values())
+        winners = [pair for pair, n in votes.items() if n == best]
+        if len(winners) > 1:
+            return None  # a tie: judge the next segment instead
+        if winners[0] != (d1, d2):
+            d1, d2 = winners[0]
+            found = mode_from_d1_d2(d1, d2, self.voice)
+            if found is None:
                 return None
-            break
-        else:
+        if best == 1 and count > CONFIRM_SEGMENTS:
             # Nothing after it could be read. A count with later segments to check it against
             # is not taken on trust: wait for a segment that is confirmed. A long preamble has
             # 24 segments, so only its last two (and a short preamble) go unchecked. (M13: at
             # 75 bps a misread count in a fade put the data phase a segment late.)
-            if count > CONFIRM_SEGMENTS:
-                return None
+            return None
         if self.zero_interleave and found.interleave == "short" and not found.voice:
             found = mode(found.rate, "zero")  # INT-012: zero and short share D1/D2
         return Detection(
