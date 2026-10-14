@@ -111,7 +111,15 @@ pytest -m "not slow" # what CI runs
 ruff check . && ruff format --check .
 python tools/conformance.py          # regenerate docs/CONFORMANCE.md (about an hour)
 pip install -e ".[notebook]" && python tools/build_notebook.py   # rebuild the notebook
+python tools/toystack.py --quick     # link-layer experiments: traffic patterns, WAVs (below)
 ```
+
+`tools/toystack.py` is a playground for what will ride on the modem (PLAN.md, S8): beacons,
+chat, telemetry, a store-and-forward mail session, a fountain-coded file transfer, and a
+transfer whose 110 mode is negotiated from measured SNR (this README is its default test
+file; `--file` picks another). Each runs as real transmissions through the channel simulator
+and the receiver, with air time, frames lost, end-to-end throughput, and WAV recordings as
+sent and as heard. Its frame format and protocols are drafts for experiments, not decisions.
 
 Tests on real recordings (`tests/acceptance/`) run when `M110C_RECORDINGS` names a
 directory holding them at 9600 S/s; see docs/VALIDATION.md.

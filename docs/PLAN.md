@@ -296,8 +296,36 @@ against Table XVI.
 - **S5**: 75-bps acquisition without a preamble, using the exceptional sets (§5.3.2.3.7.1.1 note).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
-- **S8**: the Appendix A TCP modem interface (data socket and remote control), so that
-  software built for real modems, such as STANAG 5066 stacks, can use `m110c` as one.
+- **S8**: host interfaces and a link layer.
+  - The Appendix A LAN interface (TCP and UDP, data and remote control). It is part of 110C
+    (non-mandatory) and depends on no other document.
+  - A KISS interface (TCP and pipe), the de facto host interface of open packet software.
+  - On air, a minimal frame inside each transmission (sync word, length, payload, CRC), so a
+    damaged frame costs only itself. Link layers on top are existing open protocols chosen for
+    110's behaviour (half-duplex, seconds per turnaround, long one-way transmissions):
+    AX.25 UI frames, store-and-forward, erasure-coded broadcast. Not TCP end to end.
+  - `tools/toystack.py` is the playground for these choices: six traffic patterns as real
+    transmissions through the channel simulator and the receiver. First results (one
+    channel realisation each, 2 paths, 2 ms, 1 Hz): every transmission costs at least 1.2 s,
+    so control traffic belongs inside data transmissions; long interleave never takes less
+    than 9.6 s, too long for short messages; and at 11 dB a 16-kB file arrived faster at
+    1200L, with no losses (875 bps end to end), than at 2400L repaired by a fountain code
+    (about 560-670 bps). Choosing the 110 mode from measured SNR matters more than repair.
+  - Negotiating the mode (the tool's `negotiated` pattern, README.md as the file): the
+    receiver's SNR report reads 3-4 dB below the channel SNR, consistently, and one short
+    message is good to about +/-1.5 dB, so it is usable once calibrated and given a margin.
+    SNR alone overreacts: after a band drop, one low estimate sent a transfer from 1200L to
+    150L although 1200L had just delivered every block. Moving at most one rung after a
+    clean round, and jumping down only after real losses, took that run from 437 to 780 bps
+    end to end. Feedback needs short data transmissions (here 6 blocks) and polls for lost
+    status replies.
+
+  **[DECIDED]** No STANAG 5066, now or later: its current editions are not publicly
+  distributable, and earlier ones differ on the air (the CRCs changed after the 1.0.2 draft).
+  Note that 110C §4.4 says an ARQ protocol, if used, "shall be in accordance with STANAG
+  5066": an ARQ layer of ours is outside 110C, and the docs will say so. The waveform and
+  Appendix A are unaffected. Reticulum fits technically but encrypts by design, which
+  amateur rules forbid (e.g. US Part 97); usable only where encryption is allowed.
 - **S9**: interoperability tests against another implementation over an audio path
   (e.g. MS-DMT, a Windows 110A sound-card modem), across mode, interleave and framing.
   Until then, the claim is "symbol-exact with one fielded modem's recording", not
