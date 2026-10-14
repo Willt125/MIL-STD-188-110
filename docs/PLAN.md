@@ -296,8 +296,21 @@ against Table XVI.
 - **S5**: 75-bps acquisition without a preamble, using the exceptional sets (§5.3.2.3.7.1.1 note).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
-- **S8**: the Appendix A TCP modem interface (data socket and remote control), so that
-  software built for real modems, such as STANAG 5066 stacks, can use `m110c` as one.
+- **S8**: host interfaces and a link layer.
+  - The Appendix A LAN interface (TCP and UDP, data and remote control). It is part of 110C
+    (non-mandatory) and depends on no other document.
+  - A KISS interface (TCP and pipe), the de facto host interface of open packet software.
+  - On air, a minimal frame inside each transmission (sync word, length, payload, CRC), so a
+    damaged frame costs only itself. Link layers on top are existing open protocols chosen for
+    110's behaviour (half-duplex, seconds per turnaround, long one-way transmissions):
+    AX.25 UI frames, store-and-forward, erasure-coded broadcast. Not TCP end to end.
+
+  **[DECIDED]** No STANAG 5066, now or later: its current editions are not publicly
+  distributable, and earlier ones differ on the air (the CRCs changed after the 1.0.2 draft).
+  Note that 110C §4.4 says an ARQ protocol, if used, "shall be in accordance with STANAG
+  5066": an ARQ layer of ours is outside 110C, and the docs will say so. The waveform and
+  Appendix A are unaffected. Reticulum fits technically but encrypts by design, which
+  amateur rules forbid (e.g. US Part 97); usable only where encryption is allowed.
 - **S9**: interoperability tests against another implementation over an audio path
   (e.g. MS-DMT, a Windows 110A sound-card modem), across mode, interleave and framing.
   Until then, the claim is "symbol-exact with one fielded modem's recording", not
