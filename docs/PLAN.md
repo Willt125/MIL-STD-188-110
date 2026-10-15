@@ -286,7 +286,19 @@ against Table XVI.
 
 ---
 
-## 6. Stretch milestones (post-1.0, unordered)
+## 6. Stretch milestones (post-1.0)
+
+**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4, then S3, then S5.
+Then the modem program (milestones to be written after the network-stack discussion below):
+real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
+Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
+on the third-party recordings locally (`M110C_RECORDINGS`), and a CI version needs
+recordings we may redistribute, which S9 would produce. S6 (C port) waits until the design
+stops moving; S9 needs another modem over audio (e.g. MS-DMT) and the user's help. S10 is
+done. Tools from S10 to use throughout: `tools/sweep.py` for measurements over channels,
+`Receiver(trace=True)` for what the demodulator did, `TimeVaryingChannel` for conditions
+that change, `tools/toystack.py` for link-layer experiments.
+
 
 - **S1**: Appendix C (3200–9600 bps, QAM, tail-biting K=7, mini-probes). This reuses
   `rx/acquire`, `rx/equalize` and `fec` with tail-biting added.
@@ -424,6 +436,49 @@ Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixe
 - The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
   (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
 
+
+### The network stack: agenda for a discussion before the modem program
+
+**[TO DISCUSS]** Recorded 2026-10-15 from the user's goals; nothing here is decided. The
+aim is a stack that is an educational toy and still usable day to day, as chibicc and QOI
+are. The layer names are borrowed from STANAG 5066 as vocabulary only: nothing of 5066's
+design is to be read further or copied, and nothing will claim compatibility with it. Each
+layer is judged by the goal it serves in a civilian or research setting, then met by an
+existing public protocol where one fits, or by something of our own.
+
+Layers, as goals:
+- **Subnetwork interface**: clients attach and are served; soft-link, hard-link and
+  broadcast data exchange sessions; a ranking of clients by importance.
+- **Channel access**: makes and breaks physical links, reports link state, passes data
+  frames between the layers above and below.
+- **Data transfer**: an ARQ and a non-ARQ mode, both with regular and expedited service;
+  ARQ also confirms delivery (to the node and to the client) and delivers only error-free
+  frames.
+- **Subnet management**: reaches into every layer, into ALE (if any) and into the modem
+  itself (mode choice, link quality: toystack's negotiation lives here).
+
+Clients to consider: unacknowledged and acknowledged messages; mail in the manner of HMTP
+and HF-POP3 (SMTP and POP3 adapted to HF: batching, compression, few turnarounds); ZMODEM
+file transfer; orderwire (operator chat); subnet management clients; frequency-availability
+information clients.
+
+Questions to bring to it:
+- **Which layers earn their place.** The open amateur HF stacks (VARA, ARDOP, PACTOR with
+  Winlink's B2F) are flatter: an ARQ link plus a session protocol. Merge layers where a
+  civilian use needs no split.
+- **Public protocol or our own, layer by layer.** HMTP and HF-POP3 are themselves 5066
+  client definitions, so "our own SMTP/POP3 adaptation" or Winlink's documented B2F;
+  ZMODEM's protocol description is public; AX.25 and KISS give interoperability with
+  existing software, which a bespoke protocol never has.
+- **Size, the chibicc/QOI way.** One short specification per layer of our own, with a
+  reference implementation, test vectors, and a toystack experiment before it is built.
+- **Rules.** Amateur use needs publicly documented protocols and no encryption (e.g. US
+  Part 97): publishing our own specifications is then a requirement, and enough.
+- **ALE and frequency availability.** MIL-STD-188-141 (ALE) is believed to be approved for
+  public release (to be checked), with open implementations; link-quality data from it, or
+  open propagation prediction (e.g. VOACAP), could feed frequency-availability clients.
+- **Open findings to carry in**: toystack's round sizing and recovery (S8 above); the
+  per-frame probe SNR that saturates near 11-12 dB (§5 notes), not to be reported upward.
 ---
 
 ## 7. Risks
