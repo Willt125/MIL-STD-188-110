@@ -52,6 +52,32 @@ def test_every_mode_is_acquired_and_decoded(m):
     assert len(rx.messages) == 1 and rx.messages[0].mode == m and rx.messages[0].eom_found
 
 
+@pytest.mark.parametrize("m", all_modes(), ids=str)
+def test_every_mode_is_received_with_the_interleave_told_from_the_data(m):
+    """The default, interleave="auto" (S4): zero and short interleave share a preamble, and
+    the receiver tells them apart from the data; the message reports the mode found."""
+    out, rx = receive(burst(m))
+    msg = rx.messages[0]
+    assert out == MSG and msg.mode == m and msg.eom_found
+    told = m.rate != 4800 and m.interleave in ("zero", "short")
+    assert msg.interleave_detection == (m.interleave if told else None)
+    assert any(n.startswith(f"interleave: {m.interleave} (") for n in msg.notes) == told
+
+
+@pytest.mark.parametrize("interleave, expected", [("short", "600S"), ("zero", "600Z")])
+def test_a_forced_interleave_is_taken_as_given(interleave, expected):
+    """interleave="short" or "zero" assumes one, as before S4: forcing the wrong one loses
+    the message, which is what auto prevents."""
+    out, rx = receive(burst(mode(600, "zero")), interleave=interleave)
+    assert str(rx.messages[0].mode) == expected and rx.messages[0].interleave_detection is None
+    assert (out == MSG) == (expected == "600Z")
+
+
+def test_an_unknown_interleave_option_is_refused():
+    with pytest.raises(ValueError, match="auto, short or zero"):
+        Receiver(interleave="long")
+
+
 def test_signal_starting_at_sample_zero():
     m = mode(1200, "short")
     out, _ = receive(burst(m, lead=0))

@@ -198,6 +198,10 @@ class ViterbiDecoder:
             self._metrics[start_state] = 0.0
         self._decisions: list[np.ndarray] = []  # one (64,) array of 0/1 per step
         self._leftover = np.zeros(0)  # an odd trailing soft bit waiting for its partner
+        # The best path's metric so far, and the most any path could have scored (the sum of
+        # |soft|): their ratio, :attr:`fit`, says how well the input looks like this code.
+        self.path_metric = 0.0
+        self.soft_magnitude = 0.0
 
     def decode(self, soft: np.ndarray) -> np.ndarray:
         """Process more soft bits; return any decoded bits that are now settled."""
@@ -211,13 +215,24 @@ class ViterbiDecoder:
             candidates = self._metrics[PREDECESSOR] + s1 * SIGN1 + s2 * SIGN2
             choice = np.argmax(candidates, axis=1)
             self._metrics = candidates[rows, choice]
-            self._metrics -= self._metrics.max()  # keep numbers bounded
+            best = self._metrics.max()
+            self._metrics -= best  # keep numbers bounded
+            self.path_metric += best
+            self.soft_magnitude += abs(s1) + abs(s2)
             self._decisions.append(choice.astype(np.uint8))
             if len(self._decisions) == 2 * self.traceback_depth:
                 bits = self._traceback(int(np.argmax(self._metrics)))
                 out.append(bits[: self.traceback_depth])
                 del self._decisions[: self.traceback_depth]
         return np.concatenate(out) if out else np.zeros(0, dtype=np.uint8)
+
+    @property
+    def fit(self) -> float | None:
+        """Best path metric over the most any path could score, in [-1, 1]: 1 when every soft
+        bit agrees with one code sequence. Soft bits that are not this code's output (noise,
+        or a code sequence permuted by the wrong deinterleaver) fit well below 1, because the
+        decoder can only choose among code sequences. None before any input."""
+        return self.path_metric / self.soft_magnitude if self.soft_magnitude > 0 else None
 
     def flush(self, terminated: bool = True) -> np.ndarray:
         """Return all remaining decoded bits and reset for a new message.

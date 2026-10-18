@@ -218,9 +218,18 @@ def rx_parser() -> argparse.ArgumentParser:
         "--msb-first", action="store_true", help="synchronous bytes, MSB first (default LSB first)"
     )
     p.add_argument(
+        "--interleave",
+        choices=("auto", "short", "zero"),
+        default="auto",
+        help="zero and short interleave share their preambles (INT-012): tell them apart "
+        "from the data (auto, the default), or assume one",
+    )
+    p.add_argument(
         "--zero-interleave",
-        action="store_true",
-        help="treat short-interleave preambles as zero interleave (INT-012)",
+        action="store_const",
+        const="zero",
+        dest="interleave",
+        help="the same as --interleave zero",
     )
     p.add_argument(
         "--voice",
@@ -250,8 +259,11 @@ def _offset(carrier_hz: float) -> str:
 
 def _describe_start(msg, sample_rate) -> str:
     det = msg.detection
+    mode = msg.mode
+    if msg.interleave_detection == "deciding":  # not yet told from the data
+        mode = f"{msg.mode.rate} bps, zero or short interleave,"
     return (
-        f"m110c-rx: {msg.mode} preamble at {max(det.segment_start, 0) / sample_rate:.2f} s, "
+        f"m110c-rx: {mode} preamble at {max(det.segment_start, 0) / sample_rate:.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), receiving"
     )
 
@@ -270,6 +282,7 @@ def _describe(msg, sample_rate) -> str:
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
         f"clock {msg.clock_ppm:+.0f} ppm, SNR {snr}, "
         f"{msg.n_bytes} bytes, {end}"
+        + (" (interleave told from the data)" if msg.interleave_detection else "")
     )
 
 
@@ -303,7 +316,7 @@ def rx_main(argv=None) -> int:
             max_offset_hz=args.max_offset,
             msb_first=args.msb_first,
             async_format=args.async_format,
-            zero_interleave=args.zero_interleave,
+            interleave=args.interleave,
             invert_spectrum=args.invert_spectrum,
             equalize=args.equalize,
             voice=args.voice,

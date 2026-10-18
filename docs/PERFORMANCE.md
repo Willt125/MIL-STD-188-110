@@ -529,3 +529,56 @@ the fixes were chosen on; the 223 fresh channels above are the independent check
 Losing lock remains how 75-bps messages fail below the Table XVI SNR, at a rate per minute
 (75L at 0 dB: 45 of 48 one-minute messages clean). Recovering lock in the data phase, with
 no probes, is not attempted.
+
+## S4: telling zero interleave from short interleave (2026-10-18)
+
+Zero and short interleave share their preambles (INT-012), their probes and their frames, so
+the demodulator's output is the same under both; only the deinterleaver differs. The
+receiver now decodes the first 0.6-s block both ways and compares the two Viterbi fits: the
+best path metric over the most any path could score (`ViterbiDecoder.fit`, 1 for soft bits
+that are exactly a code sequence). Under the right hypothesis the soft bits are a code
+sequence plus noise; under the wrong one they are a code sequence shuffled, which no code
+path follows, and they fit like noise. Both decoders see the same soft bits in another order,
+so their fits compare directly. (Absolute fits are not comparable across inputs: pure
+Gaussian noise fits 0.86, a shuffled noiseless code sequence 0.75.)
+
+### The margin
+
+`python tools/interleave_check.py margins`: every rate, both interleaves sent, a noise-only
+channel and 2 paths, 2 ms, 1 Hz fading, -9 to 18 dB, six 4-s messages per point. The margin
+is fit(true) minus fit(wrong); "decodable" means a bit error rate below 1e-3 under the true
+interleave.
+
+| rate | blocks | decodable | smallest margin | not decodable | smallest | largest |
+|-----:|-------:|----------:|----------------:|--------------:|---------:|--------:|
+| 2400 | 1 | 49 | +0.088 | 125 | -0.010 | +0.168 |
+| 1200 | 1 | 77 | +0.115 | 107 | -0.033 | +0.225 |
+| 600 | 1 | 105 | +0.087 | 81 | -0.039 | +0.242 |
+| 300 | 1 | 124 | +0.036 | 56 | -0.022 | +0.146 |
+| 150 | 1 | 137 | +0.067 | 44 | -0.020 | +0.174 |
+| 75 | 1 | 145 | +0.101 | 47 | +0.009 | +0.302 |
+
+After one block, every one of the 637 decodable messages was ahead in the right direction
+by 0.036 or more; margins the wrong way (down to -0.039) came only from messages that could
+not be decoded under either hypothesis. Two and three blocks change little (the tool prints
+them). Hence the rule (`rx/autointerleave.py`): the hypothesis ahead by `DECIDE_MARGIN` =
+0.02 after a block wins; with no decision after three blocks, the larger fit. Two shortcuts
+come first: an EOM found under one hypothesis decides, and a signal that ends inside its
+first block (no EOM) was zero interleave, since short interleave always sends whole blocks.
+(Fits from a partial block are not used: the short decoder fills the rest with erasures, and
+a few soft bits among erasures fit any code.)
+
+### End to end
+
+`python tools/interleave_check.py end-to-end`: the complete receiver with `interleave="auto"`
+against one told the truth, on every Table XVI row below 4800 bps, from 4 dB below to 3 dB
+above the row's SNR, both interleaves, eight 10-s messages per point.
+
+**576 messages (347 decodable when told the truth): none received in the wrong mode, none
+received worse with auto.** Every decision was made on the margin after the first block.
+
+Cost: no added delay when short interleave is sent (its decoder waits for a whole block
+anyway); up to one block (0.6 s) when zero interleave is sent, while its bits are held.
+Long interleave and 4800 bps have their own D1/D2 and are not affected; digital voice
+(2400V) is short interleave only. `tools/sweep.py` gives the receiver the interleave, so its
+data still measures each mode itself.

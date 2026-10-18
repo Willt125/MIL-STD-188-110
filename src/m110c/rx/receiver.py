@@ -30,6 +30,7 @@ from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from ..tx import data_phase_symbols
 from .acquire import Detection, PreambleSearch
+from .autointerleave import InterleaveDetectingDecoder, applies_to
 from .decode import DataDecoder
 from .eom import EomDetector
 from .equalize import EqualizingDemodulator
@@ -53,6 +54,9 @@ class Message:
     clock_ppm: float = 0.0
     end_sample: int = 0
     notes: list[str] = field(default_factory=list)
+    # Interleave told from the data (S4): None if not attempted (forced, long, 4800...),
+    # else "zero" or "short" once decided, "deciding" until then.
+    interleave_detection: str | None = None
     # With Receiver(trace=True): the demodulator's state after each unit (TraceUnit).
     trace: list = field(default_factory=list)
 
@@ -66,6 +70,7 @@ class Receiver:
         msb_first: bool = False,
         async_format: AsyncFormat | None = None,
         zero_interleave: bool = False,
+        interleave: str = "auto",
         invert_spectrum: bool = False,
         threshold: float | None = None,
         equalize: bool = True,
@@ -77,7 +82,13 @@ class Receiver:
         self.max_offset_hz = max_offset_hz
         self.msb_first = msb_first
         self.async_format = async_format
-        self.zero_interleave = zero_interleave
+        # Short and zero interleave share their preambles (INT-012): "auto" tells them apart
+        # from the data (rx/autointerleave.py), "short" or "zero" assumes one.
+        # zero_interleave=True is the older spelling of interleave="zero".
+        if interleave not in ("auto", "short", "zero"):
+            raise ValueError(f"interleave must be auto, short or zero, not {interleave!r}")
+        self.interleave = "zero" if zero_interleave else interleave
+        self.zero_interleave = self.interleave == "zero"
         self.invert_spectrum = invert_spectrum
         self.threshold = threshold
         self.equalize = equalize  # False: the M8 single-gain tracker (for comparison)
@@ -189,7 +200,11 @@ class Receiver:
         self._demod = demodulator(
             m, detection, self.sample_rate, start_index=self._demod_start, **options
         )
-        self._decoder = DataDecoder(m)
+        if self.interleave == "auto" and applies_to(m):
+            self._decoder = InterleaveDetectingDecoder(m)
+            self._message.interleave_detection = "deciding"
+        else:
+            self._decoder = DataDecoder(m)
         self._eom = EomDetector()
         self._async = AsyncDecoder(self.async_format) if self.async_format and not m.voice else None
         self._bit_pending = np.zeros(0, dtype=np.uint8)
@@ -197,6 +212,7 @@ class Receiver:
     def _feed_message(self, samples) -> bytes:
         symbols, noise_var = self._demod.process(samples)
         payload = self._eom.process(self._decoder.process(symbols, noise_var))
+        self._note_interleave()
         out = self._deframe(payload)
         if self._eom.found or self._demod.lost:
             out += self._end_message(final=False)
@@ -210,6 +226,7 @@ class Receiver:
         if not eom.found:
             out += self._deframe(eom.process(decoder.finish()))
             out += self._deframe(eom.finish(), final=True)
+        self._note_interleave()  # a decision made while finishing
         msg = self._message
         msg.eom_found = eom.found
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
@@ -222,6 +239,18 @@ class Receiver:
         self.messages.append(msg)
         self._start_search(max(msg.end_sample, self._raw_start))
         return out
+
+    def _note_interleave(self) -> None:
+        """Once the interleave has been told from the data, the message takes that mode."""
+        decoder, msg = self._decoder, self._message
+        if msg.interleave_detection == "deciding" and decoder.decided:
+            msg.mode = decoder.mode
+            msg.interleave_detection = decoder.decided
+            margin = "" if decoder.margin is None else f", margin {decoder.margin:+.3f}"
+            msg.notes.append(
+                f"interleave: {decoder.decided} ({decoder.reason}, after "
+                f"{decoder.blocks_judged} block(s){margin})"
+            )
 
     def _message_end(self, demod, eom) -> int:
         """Where the transmission ended, so the search for the next one can start there.
