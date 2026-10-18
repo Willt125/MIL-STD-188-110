@@ -26,6 +26,7 @@ import numpy as np
 from .. import bits as bitops
 from .._blas import single_threaded_blas
 from ..framing import AsyncDecoder, AsyncFormat
+from ..resample import INTERNAL_RATE, Resampler
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from ..tx import data_phase_symbols
@@ -77,7 +78,13 @@ class Receiver:
         voice: bool = False,
         trace: bool = False,
     ):
-        self.sample_rate = sample_rate
+        # The receiver runs at the input rate when it is a multiple of 2400 S/s; other rates
+        # (8000, 44100, ...) are resampled to 9600 S/s first (S3). Sample positions in the
+        # diagnostics (Detection.segment_start, Message.end_sample) count at sample_rate.
+        self.input_rate = sample_rate
+        native = sample_rate % T.SYMBOL_RATE == 0
+        self._resampler = None if native else Resampler(sample_rate, INTERNAL_RATE)
+        self.sample_rate = sample_rate if native else INTERNAL_RATE
         self.carrier_hz = carrier_hz
         self.max_offset_hz = max_offset_hz
         self.msb_first = msb_first
@@ -122,6 +129,12 @@ class Receiver:
             x = np.where(np.isfinite(x), x, 0)
         if self.invert_spectrum:
             x = np.conj(x)  # INT-021: a lower-sideband signal is the mirror image
+        if self._resampler is not None:
+            x = self._resampler.process(x)
+        return self._consume(x)
+
+    def _consume(self, x: np.ndarray) -> bytes:
+        """Samples at sample_rate, ready for the search and the demodulator."""
         self._raw = np.concatenate([self._raw, x])
         self._samples_in += x.size
         out = bytearray()
@@ -147,6 +160,8 @@ class Receiver:
         """End of input: close any message in progress, and receive any further
         transmissions in the samples still buffered (the input may end soon after one)."""
         out = b""
+        if self._resampler is not None:  # the resampler's last outputs
+            out += self._consume(self._resampler.flush())
         unsearched = self._demod is not None  # samples after the message's end, if so
         if unsearched:
             out += self._end_message(final=True)

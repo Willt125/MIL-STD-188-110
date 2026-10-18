@@ -105,9 +105,19 @@ def test_async_and_msb_first_are_mutually_exclusive():
     assert run_tx("--async", "8N1", "--msb-first").returncode == 2
 
 
-def test_sample_rate_not_a_multiple_of_2400():
-    out = run_tx("-s", "8000")
-    assert out.returncode == 2 and b"multiple of 2400" in out.stderr
+def test_a_sample_rate_too_low_for_the_signal_is_refused():
+    """Any rate above 6800 S/s works (S3: resampled when not a multiple of 2400)."""
+    out = run_tx("-s", "6000")
+    assert out.returncode == 2 and b"above 6800" in out.stderr
+
+
+@pytest.mark.parametrize("rate", [8000, 44100])
+def test_sample_rates_that_are_not_multiples_of_2400(rate):
+    """S3: modulated at 9600 S/s and resampled; the WAV header carries the rate."""
+    out = run_tx("-q", "-s", str(rate), "-f", "wav", stdin=b"hello")
+    assert out.returncode == 0
+    rate_read, x = io.read_wav(out.stdout)
+    assert rate_read == rate and x.size > rate  # more than a second of signal
 
 
 def test_missing_input_file():

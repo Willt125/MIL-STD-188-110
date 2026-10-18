@@ -582,3 +582,23 @@ anyway); up to one block (0.6 s) when zero interleave is sent, while its bits ar
 Long interleave and 4800 bps have their own D1/D2 and are not affected; digital voice
 (2400V) is short interleave only. `tools/sweep.py` gives the receiver the interleave, so its
 data still measures each mode itself.
+
+## S3: any audio sample rate (2026-10-18)
+
+The modulator and the receiver count whole samples per symbol, so they run natively at
+multiples of 2400 S/s only. Other rates (8000, 11025, 16000, 22050, 44100) now go through
+`m110c.resample`: exact rational resampling to and from 9600 S/s (44100 -> 9600 is 32/147),
+by a polyphase Kaiser-windowed sinc that passes 0-3400 Hz and stops, 80 dB down, whatever
+would alias into it (from min(rate in, rate out) - 3400 Hz). It adds no delay, and its
+output does not depend on how the input is chunked.
+
+Measured: a tone anywhere in 300-3300 Hz comes out within 3e-4 of the ideal at every rate
+pair tested; aliases and images are 70 dB or more down (tests/unit/test_resample.py). A
+clean 2400S message at 8000 and 44100 S/s reads exactly as at 9600: carrier +0.0 Hz, clock
+0 ppm, SNR 53.2 dB (the 16-bit WAV's limit), and the bytes are identical. Receiver CPU per
+second of signal (2400L, 20 s, one core): 0.22 s at 9600 S/s, 0.23 s at 8000, 0.24 s at
+44100 (resampled), 0.27 s at 48000 (native, 20 samples per symbol).
+
+The receiver's diagnostics count samples at the rate it works at (`Receiver.sample_rate`,
+9600 when resampling; `Receiver.input_rate` is the rate given). Below 6800 S/s the
+300-3300 Hz signal does not fit and the rate is refused.

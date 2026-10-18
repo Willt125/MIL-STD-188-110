@@ -57,7 +57,8 @@ m110c-tx --async 8N1 --format s16 < message.txt | aplay -f S16_LE -r 9600
 
 The output is complex baseband at 9600 samples/s with the carrier at +1800 Hz, so the real part
 is the audio for an upper-sideband transmitter. Options: `--rate` 75–4800, `--interleave`
-zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (a multiple of 2400),
+zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (any rate above 6800, e.g.
+8000, 44100 or 48000: multiples of 2400 natively, others resampled exactly from 9600),
 `--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`,
 `--voice` (2400 bps digital voice: the input is a vocoder's bit stream, see below).
 `m110c-tx --help` lists them all.
@@ -86,8 +87,9 @@ dominate), using 0.1–0.4 s of one CPU core per second of signal (docs/PERFORMA
 Zero and short interleave share their preambles; the receiver tells them apart from the data
 (within the first 0.6-s block; `--interleave short` or `zero` assumes one instead).
 Options: `--async`/`--msb-first` (must match the sender), `--interleave`,
-`--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
-resample other rates first, e.g. `sox in.wav -r 9600 out.wav`), `--no-equalizer` (the simpler
+`--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (any rate above 6800;
+WAV: from the header; rates that are not multiples of 2400 are resampled to 9600 first, for
+about 5% more CPU), `--no-equalizer` (the simpler
 single-gain tracker of M8, for comparison), `--voice` (below).
 
 **Digital voice** (D1/D2 = 7,7, reported as `2400V`) is the 2400S chain carrying a vocoder's

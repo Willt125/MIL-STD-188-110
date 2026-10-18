@@ -96,7 +96,7 @@ def tx_parser() -> argparse.ArgumentParser:
         "--sample-rate",
         type=int,
         default=9600,
-        help="samples per second, a multiple of 2400 (default 9600)",
+        help="samples per second, e.g. 9600, 8000, 44100 or 48000 (default 9600)",
     )
     p.add_argument(
         "--carrier",
@@ -198,7 +198,8 @@ def rx_parser() -> argparse.ArgumentParser:
         "--sample-rate",
         type=int,
         default=9600,
-        help="samples per second, a multiple of 2400 (default 9600; WAV: from the header)",
+        help="samples per second, e.g. 9600, 8000, 44100 or 48000 (default 9600; WAV: from the "
+        "header)",
     )
     p.add_argument(
         "--carrier", type=float, default=T.CARRIER_HZ, help="nominal carrier in Hz (default 1800)"
@@ -303,24 +304,24 @@ def rx_main(argv=None) -> int:
             except ValueError as exc:
                 print(f"m110c-rx: {exc}", file=sys.stderr)
                 return 1
-        if sample_rate % T.SYMBOL_RATE:
-            print(
-                f"m110c-rx: sample rate {sample_rate} Hz is not a multiple of {T.SYMBOL_RATE}; "
-                "resample first, e.g. sox in.wav -r 9600 out.wav",
-                file=sys.stderr,
+        try:
+            receiver = Receiver(
+                sample_rate=sample_rate,
+                carrier_hz=args.carrier,
+                max_offset_hz=args.max_offset,
+                msb_first=args.msb_first,
+                async_format=args.async_format,
+                interleave=args.interleave,
+                invert_spectrum=args.invert_spectrum,
+                equalize=args.equalize,
+                voice=args.voice,
             )
+        except ValueError as exc:  # a sample rate too low for the signal
+            print(f"m110c-rx: {exc}", file=sys.stderr)
             return 2
-        receiver = Receiver(
-            sample_rate=sample_rate,
-            carrier_hz=args.carrier,
-            max_offset_hz=args.max_offset,
-            msb_first=args.msb_first,
-            async_format=args.async_format,
-            interleave=args.interleave,
-            invert_spectrum=args.invert_spectrum,
-            equalize=args.equalize,
-            voice=args.voice,
-        )
+        # Positions in the reports count at the receiver's working rate (9600 S/s when the
+        # input is resampled).
+        sample_rate = receiver.sample_rate
         frame = io.bytes_per_sample(args.format) * channels
         leftover = b""
         reported, announced = 0, set()

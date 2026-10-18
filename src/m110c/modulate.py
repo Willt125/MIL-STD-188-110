@@ -5,7 +5,9 @@ The phasors are pulse-shaped with a root-raised-cosine filter and placed on the 
 
     x[n] = A * sum_k  e^{j*pi*k_sym/4} * h[n - k*sps]  *  e^{j*2*pi*f_c*n/f_s}
 
-* ``sps`` = samples per symbol = sample rate / 2400, which must be a whole number.
+* ``sps`` = samples per symbol = sample rate / 2400, a whole number. Other output rates
+  (8000, 44100 S/s, ...) are reached by modulating at 9600 S/s and resampling exactly
+  (:mod:`m110c.resample`, S3).
 * ``h``  = root-raised cosine, roll-off 0.25, spanning +/-8 symbols (INT-015). The spec only
   says the waveforms "must be filtered" (§5.3.2.3.9 note). Roll-off 0.25 puts the signal in
   1800 +/- 1500 Hz = 300..3300 Hz, the 3-kHz HF voice channel.
@@ -23,6 +25,7 @@ Streaming and determinism
 
 import numpy as np
 
+from .resample import INTERNAL_RATE, Resampler
 from .spec import tables as T
 
 BLOCK_SYMBOLS = 240  # 0.1 s; fixed so that output does not depend on input chunking
@@ -70,10 +73,13 @@ class Modulator:
         span: int = 8,
         rms: float = 0.4,
     ):
-        if sample_rate % T.SYMBOL_RATE:
-            raise ValueError(f"sample rate must be a multiple of {T.SYMBOL_RATE} Hz")
-        self.sample_rate = sample_rate
-        self.sps = sample_rate // T.SYMBOL_RATE
+        self.sample_rate = sample_rate  # of the output
+        # Modulated at the output rate when it is a multiple of 2400, else at 9600 S/s and
+        # resampled (S3).
+        native = sample_rate % T.SYMBOL_RATE == 0
+        self.modulation_rate = sample_rate if native else INTERNAL_RATE
+        self._resampler = None if native else Resampler(INTERNAL_RATE, sample_rate)
+        self.sps = self.modulation_rate // T.SYMBOL_RATE
         self.carrier_hz = carrier_hz
         self.taps = rrc_taps(self.sps, rolloff, span)
         # Unit-energy taps spread each symbol's energy over sps samples, so a symbol
@@ -85,7 +91,8 @@ class Modulator:
 
     @property
     def delay(self) -> int:
-        """Samples from a symbol's start to the peak of its pulse (filter group delay)."""
+        """Samples (at the modulation rate) from a symbol's start to the peak of its pulse
+        (filter group delay)."""
         return (self.taps.size - 1) // 2
 
     def process(self, tribits: np.ndarray) -> np.ndarray:
@@ -97,7 +104,7 @@ class Modulator:
             for i in range(n_blocks)
         ]
         self._pending = self._pending[n_blocks * BLOCK_SYMBOLS :]
-        return np.concatenate(out) if out else np.zeros(0, dtype=complex)
+        return self._resample(np.concatenate(out) if out else np.zeros(0, dtype=complex))
 
     def flush(self) -> np.ndarray:
         """Remaining samples: the last partial block plus the filter tail."""
@@ -105,7 +112,14 @@ class Modulator:
         self._pending = np.zeros(0, dtype=np.uint8)
         out.append(self._mix(self._tail))
         self._tail = np.zeros(self.taps.size - 1, dtype=complex)
-        return np.concatenate(out)
+        x = self._resample(np.concatenate(out))
+        if self._resampler is not None:
+            x = np.concatenate([x, self._resampler.flush()])
+            self._resampler = Resampler(INTERNAL_RATE, self.sample_rate)  # ready for more
+        return x
+
+    def _resample(self, x: np.ndarray) -> np.ndarray:
+        return x if self._resampler is None else self._resampler.process(x)
 
     def _block(self, tribits: np.ndarray) -> np.ndarray:
         """Filter one block by overlap-add and put it on the carrier."""
@@ -123,7 +137,7 @@ class Modulator:
             return baseband
         # Reduce the phase modulo one cycle *before* scaling by 2*pi, so the carrier stays
         # accurate however long the stream runs.
-        cycles = np.mod(self.carrier_hz * n, self.sample_rate) / self.sample_rate
+        cycles = np.mod(self.carrier_hz * n, self.modulation_rate) / self.modulation_rate
         return baseband * np.exp(2j * np.pi * cycles)
 
 
