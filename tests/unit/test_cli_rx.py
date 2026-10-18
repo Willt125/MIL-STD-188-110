@@ -115,7 +115,31 @@ def test_a_line_when_each_message_starts_and_one_when_it_ends():
     lines = out.stderr.decode().splitlines()
     assert out.stdout == b"hellohello"
     assert [line.endswith("receiving") for line in lines] == [True, False, True, False]
-    assert "1200S preamble at 0.00 s" in lines[0] and "EOM found" in lines[1]
+    # Zero and short interleave are told apart from the data (S4), after the start line.
+    assert "1200 bps, zero or short interleave, preamble at 0.00 s" in lines[0]
+    assert "1200S at 0.00 s" in lines[1] and "EOM found" in lines[1]
+    assert "interleave told from the data" in lines[1]
+
+
+@pytest.mark.parametrize(
+    "sent, option, received",
+    [
+        ("zero", [], "1200Z"),
+        ("short", [], "1200S"),
+        ("zero", ["--interleave", "zero"], "1200Z"),
+        ("zero", ["--zero-interleave"], "1200Z"),
+        ("short", ["--interleave", "short"], "1200S"),
+    ],
+)
+def test_interleave_option(sent, option, received):
+    """auto (the default) tells zero from short; --interleave short/zero (or the older
+    --zero-interleave) assume one, as before S4."""
+    tx = run([*CLI, "-q", "-r", "1200", "-i", sent], MESSAGE)
+    out = run([*CLI, "rx", *option], tx.stdout)
+    assert out.stdout == MESSAGE
+    end = out.stderr.decode().splitlines()[-1]
+    assert f"{received} at" in end
+    assert ("interleave told from the data" in end) == (option == [])
 
 
 @pytest.mark.parametrize("channels, rate", [(0, 9600), (1, 0)])

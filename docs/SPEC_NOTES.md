@@ -146,9 +146,15 @@ with INT-006.
 ### INT-012: Zero and short interleave are indistinguishable at RX. *Unspecified, High*
 Table XI assigns the same D1/D2 to both. The note says the two ends must coordinate, and lists
 automatic selection as a design objective.
-**Decision (v1):** RX assumes short; `--zero-interleave` overrides (implemented in M8, tested). Automatic detection is
-stretch goal S4. One approach is to decode the first block both ways and compare Viterbi path
-metrics.
+**Decision (v1):** RX assumes short; `--zero-interleave` overrides (implemented in M8, tested).
+**Decision (S4, 2026-10-18):** RX tells them apart from the data, by default
+(`rx/autointerleave.py`; `--interleave short|zero` still assumes one). The first block is
+decoded both ways and the Viterbi fits compared (best path metric over the most any path
+could score): the hypothesis ahead by 0.02 after a block wins; an EOM under one hypothesis,
+or a signal ending inside its first block (short interleave always sends whole blocks),
+decides earlier. Measured (docs/PERFORMANCE.md, S4): every decodable message (637 of 1097) was
+ahead by at least 0.036 after one block; through the whole receiver, 576 messages near the
+Table XVI SNRs were never received in the wrong mode or worse than with the truth given.
 
 ### INT-013: End-of-transmission framing. *Unspecified, Medium*
 - With an interleaver: EOM (32 bits) plus 144 flush zero bits, then zeros up to the end of

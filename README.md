@@ -83,7 +83,9 @@ m110c-rx: 2400L at 0.00 s, carrier 1800.3 Hz (+0.3), clock +1 ppm, SNR 13.3 dB, 
 It works as a live stream: bytes come out 1–2 s after they were on the air (up to 6 s with
 the long interleaver, 6–11 s at 75 bps, where the deinterleaver and the end-of-message check
 dominate), using 0.1–0.4 s of one CPU core per second of signal (docs/PERFORMANCE.md, M12).
-Options: `--async`/`--msb-first` (must match the sender), `--zero-interleave`,
+Zero and short interleave share their preambles; the receiver tells them apart from the data
+(within the first 0.6-s block; `--interleave short` or `zero` assumes one instead).
+Options: `--async`/`--msb-first` (must match the sender), `--interleave`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (a multiple of 2400;
 resample other rates first, e.g. `sox in.wav -r 9600 out.wav`), `--no-equalizer` (the simpler
 single-gain tracker of M8, for comparison), `--voice` (below).

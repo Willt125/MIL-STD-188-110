@@ -113,7 +113,9 @@ def run_message(job):
     paths = 2 if point["delay_ms"] > 0 or point["doppler_hz"] > 0 else 1
     spec = ChannelSpec(paths, point["delay_ms"], point["doppler_hz"], point["snr_db"])
     y = WattersonChannel(spec, seed=seed_for(point_key, k) + 7).process(x)
-    rx = Receiver(zero_interleave=m.interleave == "zero" and m.rate != 4800)
+    # The mode is given, not told from the data (S4): this measures the mode itself.
+    told = "zero" if m.interleave == "zero" and m.rate != 4800 else "short"
+    rx = Receiver(interleave=told)
     out = b""
     for i in range(0, y.size, FS):
         out += rx.process(y[i : i + FS])

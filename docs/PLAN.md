@@ -23,8 +23,8 @@ Status: **accepted** (2026-10-11). Decisions recorded as **[DECIDED]**.
 
 2. **Decoder (`m110c-rx`)**: a baseband I/Q stream goes in, from a file or stdin. The original
    bytes come out, to a file or stdout. The decoder detects the mode from the preamble (D1/D2)
-   automatically. The one exception is zero vs. short interleave, which the preamble cannot tell
-   apart (see SPEC_NOTES INT-012).
+   automatically. Zero and short interleave, which the preamble cannot tell apart (SPEC_NOTES
+   INT-012), are told apart from the data (S4).
 3. **Pipe-able**: both tools run as streaming filters with bounded memory. The memory bound is
    independent of message length and dominated by one long-interleaver block.
 4. **Readable and academic**: the code is organized to follow Figure 2 of the spec block-by-block.
@@ -288,7 +288,7 @@ against Table XVI.
 
 ## 6. Stretch milestones (post-1.0)
 
-**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4, then S3, then S5.
+**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3, then S5.
 Then the modem program (milestones to be written after the network-stack discussion below):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
@@ -305,6 +305,8 @@ that change, `tools/toystack.py` for link-layer experiments.
 - **S2**: decoding real-world 110A/B/C recordings (§4.6) as a CI test.
 - **S3**: rational resampler for arbitrary sample rates (8000 and 44100 S/s).
 - **S4**: automatic zero/short interleave detection at RX, a design objective in §5.3.2.3.7.2.1.
+  **Done** (2026-10-18): `rx/autointerleave.py`, the receiver's default; measured with
+  `tools/interleave_check.py` (docs/PERFORMANCE.md, S4).
 - **S5**: 75-bps acquisition without a preamble, using the exceptional sets (§5.3.2.3.7.1.1 note).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
