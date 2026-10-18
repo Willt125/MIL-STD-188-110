@@ -74,7 +74,7 @@ def test_symbols_are_recovered_at_the_symbol_instants(sample_rate, carrier):
     assert np.max(np.abs(error)) < 0.02  # radians; measured below 0.01
 
 
-@pytest.mark.parametrize("sample_rate", [9600, 48000])
+@pytest.mark.parametrize("sample_rate", [9600, 48000, 8000, 44100])
 def test_carrier_frequency_is_within_1_hz(sample_rate):
     """§5.3.2.3.9 b: "Clock accuracy for generation of the 1800-Hz carrier shall be within
     +/-1 Hz". An all-zero tribit stream is a pure carrier; fit its phase slope over 10 s."""
@@ -184,9 +184,12 @@ def test_flush_resets_for_a_new_transmission():
     assert np.array_equal(first, second_fresh)
 
 
-def test_sample_rate_must_be_a_multiple_of_the_symbol_rate():
-    with pytest.raises(ValueError):
-        Modulator(sample_rate=8000)
+def test_sample_rates_too_low_for_the_voice_channel_are_refused():
+    """Rates that are not multiples of 2400 are resampled (S3); below 6800 S/s the
+    300-3300 Hz signal does not fit."""
+    with pytest.raises(ValueError, match="above 6800"):
+        Modulator(sample_rate=6000)
+    assert Modulator(sample_rate=8000).modulation_rate == 9600
 
 
 # --- End to end ----------------------------------------------------------------------------

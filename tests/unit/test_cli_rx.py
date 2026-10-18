@@ -73,11 +73,20 @@ def test_wav_written_by_m110c_tx(tmp_path):
     assert run([*CLI, "rx", "-q", "-f", "wav", str(path)]).stdout == MESSAGE
 
 
-def test_sample_rate_not_a_multiple_of_2400(tmp_path):
+def test_a_wav_at_44100_is_received(tmp_path):
+    """S3: rates that are not multiples of 2400 are resampled; the WAV header gives it."""
     path = tmp_path / "cd.wav"
-    path.write_bytes(wav_bytes(np.zeros(1000), 44100))
+    tx = run([*CLI, "-q", "-r", "1200", "-s", "44100", "-f", "wav", "-o", str(path)], MESSAGE)
+    assert tx.returncode == 0
     out = run([*CLI, "rx", "-f", "wav", str(path)])
-    assert out.returncode == 2 and b"resample" in out.stderr
+    assert out.stdout == MESSAGE and b"EOM found" in out.stderr
+
+
+def test_a_sample_rate_too_low_for_the_signal_is_refused(tmp_path):
+    path = tmp_path / "low.wav"
+    path.write_bytes(wav_bytes(np.zeros(1000), 6000))
+    out = run([*CLI, "rx", "-f", "wav", str(path)])
+    assert out.returncode == 2 and b"above 6800" in out.stderr
 
 
 def test_noise_only_reports_nothing_found():

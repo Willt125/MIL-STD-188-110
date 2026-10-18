@@ -288,7 +288,7 @@ against Table XVI.
 
 ## 6. Stretch milestones (post-1.0)
 
-**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3, then S5.
+**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5.
 Then the modem program (milestones to be written after the network-stack discussion below):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
@@ -304,6 +304,10 @@ that change, `tools/toystack.py` for link-layer experiments.
   `rx/acquire`, `rx/equalize` and `fec` with tail-biting added.
 - **S2**: decoding real-world 110A/B/C recordings (§4.6) as a CI test.
 - **S3**: rational resampler for arbitrary sample rates (8000 and 44100 S/s).
+  **Done** (2026-10-18): `m110c.resample`, a streaming polyphase resampler (exact ratio,
+  Kaiser-windowed sinc, 80 dB stopband, no delay, chunk-invariant); the modulator and the
+  receiver use it for any rate above 6800 S/s that is not a multiple of 2400
+  (docs/PERFORMANCE.md, S3).
 - **S4**: automatic zero/short interleave detection at RX, a design objective in §5.3.2.3.7.2.1.
   **Done** (2026-10-18): `rx/autointerleave.py`, the receiver's default; measured with
   `tools/interleave_check.py` (docs/PERFORMANCE.md, S4).
