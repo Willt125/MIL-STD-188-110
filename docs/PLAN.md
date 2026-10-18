@@ -288,7 +288,7 @@ against Table XVI.
 
 ## 6. Stretch milestones (post-1.0)
 
-**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5.
+**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5 (done).
 Then the modem program (milestones to be written after the network-stack discussion below):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
@@ -312,6 +312,21 @@ that change, `tools/toystack.py` for link-layer experiments.
   **Done** (2026-10-18): `rx/autointerleave.py`, the receiver's default; measured with
   `tools/interleave_check.py` (docs/PERFORMANCE.md, S4).
 - **S5**: 75-bps acquisition without a preamble, using the exceptional sets (§5.3.2.3.7.1.1 note).
+  Scope (2026-10-18): *late entry* at every rate, as the note itself says ("the receive modem
+  shall use the modification of the known data at interleaver boundaries to synchronize
+  without a preamble and determine the correct data rate and mode of operation"): the D1/D2
+  probes before each block at 150-4800 bps, the exceptional sets at 75 bps.
+  **Done** (2026-10-18): `rx/lateentry.py`, opt-in (`Receiver(late_entry=True)`,
+  `m110c-rx --late-entry`); decisions in SPEC_NOTES INT-029, measurements in
+  docs/PERFORMANCE.md (S5), `tools/late_entry_check.py` to repeat them. A search for the
+  probe pattern (or the 75-bps sets) over +/-400 Hz, then the equalising demodulator in a
+  late mode reading each probe and set, then every candidate boundary checked by decoding
+  the block after it. Over 336 cut transmissions (every mode, noise only and fading): 318
+  joined, none in the wrong mode, 1.5 s of signal with zero or short interleave and 3-7 s
+  with long; noise alone (20 min) delivered nothing, and messages with preambles came out
+  unchanged. On fading channels the late receiver is still worse than the preamble
+  receiver in about 4% of receptions (11 of 288). Async framing finds its own
+  characters where a block is not whole bytes (300, 150, 75 bps, zero or short).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
 - **S8**: host interfaces and a link layer.

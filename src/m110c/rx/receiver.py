@@ -35,6 +35,7 @@ from .autointerleave import InterleaveDetectingDecoder, applies_to
 from .decode import DataDecoder
 from .eom import EomDetector
 from .equalize import EqualizingDemodulator
+from .lateentry import LateEntry, LateEntrySearch
 from .track import TrackingDemodulator
 
 # The end of a message can lie this far behind the newest sample: the demodulator holds
@@ -58,6 +59,7 @@ class Message:
     # Interleave told from the data (S4): None if not attempted (forced, long, 4800...),
     # else "zero" or "short" once decided, "deciding" until then.
     interleave_detection: str | None = None
+    late_entry: bool = False  # joined without its preamble (S5); detection is a LateLock
     # With Receiver(trace=True): the demodulator's state after each unit (TraceUnit).
     trace: list = field(default_factory=list)
 
@@ -77,6 +79,7 @@ class Receiver:
         equalize: bool = True,
         voice: bool = False,
         trace: bool = False,
+        late_entry: bool = False,
     ):
         # The receiver runs at the input rate when it is a multiple of 2400 S/s; other rates
         # (8000, 44100, ...) are resampled to 9600 S/s first (S3). Sample positions in the
@@ -105,6 +108,11 @@ class Receiver:
         # Record each message's demodulator state per unit in Message.trace (for figures and
         # diagnosis; memory grows with the message). Equalising demodulator only.
         self.trace = trace
+        # Also join transmissions already in progress, without their preamble (S5,
+        # rx/lateentry.py): costs about a quarter of real time in CPU while no message is
+        # being received. Needs the equaliser.
+        self.late_entry = late_entry and equalize
+        self._late = None  # the late-entry attempt in progress, if any
         self.messages: list[Message] = []
         self._message: Message | None = None
         self._raw = np.zeros(0, dtype=complex)  # recent input
@@ -142,10 +150,15 @@ class Receiver:
         while True:
             if self._demod is None:
                 detection = self._search.process(new)
-                if detection is None:
-                    break
-                self._start_message(detection)
-                out += self._feed_message(self._raw_from(self._demod_start))
+                if detection is not None:  # (a late-entry attempt is dropped at its end)
+                    self._start_message(detection)
+                    out += self._feed_message(self._raw_from(self._demod_start))
+                else:
+                    # A late message, if one starts, has been fed every sample so far.
+                    started = self._late_step(new) if self.late_entry else None
+                    if started is None:
+                        break
+                    out += started
             else:
                 out += self._feed_message(new)
             if self._demod is not None:
@@ -162,6 +175,7 @@ class Receiver:
         out = b""
         if self._resampler is not None:  # the resampler's last outputs
             out += self._consume(self._resampler.flush())
+        self._late = None  # a late entry not yet verified when the input ends is dropped
         unsearched = self._demod is not None  # samples after the message's end, if so
         if unsearched:
             out += self._end_message(final=True)
@@ -203,6 +217,58 @@ class Receiver:
         self._search._next = position
         self._search_from = position
         self._demod = None
+        self._late = None
+        if self.late_entry:
+            self._late_search = LateEntrySearch(
+                self.sample_rate, self.carrier_hz, self.max_offset_hz, start=position
+            )
+
+    def _late_step(self, new: np.ndarray) -> bytes | None:
+        """Late entry, while no message is being received: search for a transmission in
+        progress, and follow an attempt to join one. Returns the first output (possibly
+        empty) once a message starts this way, else None."""
+        if self._late is None:
+            lock = self._late_search.process(new)
+            if lock is None:
+                return None
+            self._late = LateEntry(lock, self.sample_rate)
+            confirmed = self._late.process(self._late_search.samples_from(self._late.start_index))
+        else:
+            confirmed = self._late.process(new)
+        if self._late.failed:  # no verified block boundary: search on from here
+            self._late = None
+            self._late_search = LateEntrySearch(
+                self.sample_rate, self.carrier_hz, self.max_offset_hz, start=self._samples_in
+            )
+            return None
+        return self._start_late_message() if confirmed else None
+
+    def _start_late_message(self) -> bytes:
+        late, self._late = self._late, None
+        m, lock = late.mode, late.lock
+        self._message = Message(mode=m, detection=lock, late_entry=True)
+        margin = (
+            "" if late.margin is None else f", verified by decoding (margin {late.margin:+.3f})"
+        )
+        self._message.notes.append(f"late entry: joined at an interleaver block{margin}")
+        if self.async_format is None and not _whole_bytes_per_block(m):
+            self._message.notes.append(
+                "late entry: a block is not a whole number of bytes at this mode, so the "
+                "synchronous byte boundaries are unknown (asynchronous framing finds its own)"
+            )
+        self._demod, self._demod_start = late.demod, late.start_index
+        self._decoder = DataDecoder(m, start_state=None)  # joined mid-message
+        self._eom = EomDetector()
+        self._async = (
+            AsyncDecoder(self.async_format, find_phase=True) if self.async_format else None
+        )
+        self._bit_pending = np.zeros(0, dtype=np.uint8)
+        z, v = late.symbols_from_block()
+        payload = self._eom.process(self._decoder.process(z, v))
+        out = self._deframe(payload)
+        if self._eom.found or self._demod.lost:
+            out += self._end_message(final=False)
+        return out
 
     def _start_message(self, detection: Detection) -> None:
         m = detection.mode
@@ -291,7 +357,7 @@ class Receiver:
 
     def _deframe(self, payload_bits: np.ndarray, final: bool = False) -> bytes:
         if self._async is not None:
-            out = self._async.process(payload_bits)
+            out = self._async.process(payload_bits, final=final)
         else:
             bits = np.concatenate([self._bit_pending, payload_bits])
             whole = bits.size - bits.size % 8
@@ -323,3 +389,17 @@ class Receiver:
         drop = max(0, min(keep_from, self._samples_in) - self._raw_start)
         self._raw = self._raw[drop:]
         self._raw_start += drop
+
+
+def _whole_bytes_per_block(m: ModeSpec) -> bool:
+    """Does an interleaver block (0.6 s without one) carry a whole number of bytes? Then a
+    late entry at a block boundary keeps the synchronous byte boundaries."""
+    if m.rate == 4800:
+        return True
+    if m.has_interleaver:
+        coded = m.interleaver_bits
+    elif m.is_75bps:
+        coded = 2 * m.block_symbols // T.TRIBITS_PER_75BPS_SET
+    else:
+        coded = m.block_symbols // m.frame_symbols * m.unknown_per_frame * m.bits_per_channel_symbol
+    return (coded // (2 * m.repetitions)) % 8 == 0

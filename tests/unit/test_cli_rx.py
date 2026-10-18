@@ -178,3 +178,16 @@ def test_int_019_voice_round_trip(tmp_path):
     out = run([*CLI, "rx", "--voice", "--async", "8N1", str(sig)])
     assert out.returncode == 0 and out.stdout == bits
     assert b"2400V" in out.stderr
+
+
+def test_late_entry_joins_a_transmission_without_its_preamble():
+    """S5: cut 2 s into a 1200S transmission (preamble and the first blocks gone): with
+    --late-entry the rest of the message arrives; without it, nothing does."""
+    tx = run([*CLI, "-q", "-r", "1200", "-i", "short", "-f", "s16"], MESSAGE * 8)
+    cut = tx.stdout[2 * 2 * 9600 :]  # 2 s of 16-bit samples
+    plain = run([*CLI, "rx", "-f", "s16"], cut)
+    late = run([*CLI, "rx", "-f", "s16", "--late-entry"], cut)
+    assert plain.stdout == b""
+    assert len(late.stdout) > 100 and (MESSAGE * 8).endswith(late.stdout)
+    lines = late.stderr.decode().splitlines()
+    assert "joined without preamble" in lines[0] and lines[1].endswith("(late entry)")

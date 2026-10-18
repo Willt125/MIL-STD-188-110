@@ -112,3 +112,24 @@ def test_transmit_bytes_async_option():
         transmit_bytes(b"hi", m, async_format=fmt), transmit(async_encode(b"hi", fmt), m)
     )
     assert not np.array_equal(transmit_bytes(b"hi", m, async_format=fmt), transmit_bytes(b"hi", m))
+
+
+def test_find_phase_recovers_characters_joined_mid_stream():
+    """S5: characters back to back, joined three bits into one: a start-bit hunt can lock
+    onto a wrong phase with no idle gap to recover at; looking for the phase where frames
+    look like frames does not."""
+    fmt = AsyncFormat.parse("8N1")
+    text = bytes(range(0x30, 0x70)) * 3  # 192 characters, no idle between them
+    bits = async_encode(text, fmt)[3:]  # start inside the first character
+    found = AsyncDecoder(fmt, find_phase=True)
+    out = found.process(bits[:1000]) + found.process(bits[1000:], final=True)
+    assert text.endswith(out) and len(out) == len(text) - 1
+
+
+def test_find_phase_with_fewer_bits_than_it_wants():
+    """At the end of the signal the phase is chosen from what there is."""
+    fmt = AsyncFormat.parse("8N1")
+    bits = async_encode(b"short", fmt)[10:]  # from the second character
+    decoder = AsyncDecoder(fmt, find_phase=True)
+    assert decoder.process(bits) == b""  # still collecting
+    assert decoder.process(np.zeros(0, np.uint8), final=True) == b"hort"

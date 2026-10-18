@@ -37,7 +37,15 @@ RECENT_SYMBOLS = 10 * T.SYMBOL_RATE
 
 
 class DataDecoder:
-    def __init__(self, mode: ModeSpec, noise_var: float = 1.0, traceback_depth: int = 96):
+    def __init__(
+        self,
+        mode: ModeSpec,
+        noise_var: float = 1.0,
+        traceback_depth: int = 96,
+        start_state: int | None = 0,
+    ):
+        """``start_state``: the encoder's state at the first bit (0 at the start of a
+        message, INT-023); None when decoding joins a message in progress (late entry)."""
         self.mode = mode
         self.noise_var = noise_var
         self._symbols_in = 0  # data-phase symbols consumed (scrambler position)
@@ -47,7 +55,9 @@ class DataDecoder:
         self._pending_var = np.zeros(0)  # their noise variances
         self._deinterleaver = Deinterleaver(mode)
         self._repeat_pending = np.zeros(0)  # soft bits waiting for a whole repeated group
-        self._viterbi = fec.ViterbiDecoder(traceback_depth, start_state=0) if mode.coded else None
+        self._viterbi = (
+            fec.ViterbiDecoder(traceback_depth, start_state=start_state) if mode.coded else None
+        )
         self._known_signal = 0.0  # accumulated |known (or decided) symbol|^2
         self._known_error = 0.0  # accumulated |received - known|^2
         # The same per frame (or set), for the last few seconds only: (first data-phase

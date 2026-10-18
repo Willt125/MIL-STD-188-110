@@ -92,6 +92,14 @@ PRECURSOR_TAPS = 4  # A: pulse tails before the leading path
 POSTCURSOR_TAPS = 20  # B: delayed paths up to ~7 ms, plus pulse tails
 LOOKAHEAD = 6  # extra future samples the MMSE filter may use
 ANCHOR_SYMBOLS = 256  # known symbols for the first, wide channel estimate
+LATE_ANCHOR_SYMBOLS = 480  # late entry: 10 or 12 frames, or 15 sets (a multiple of each)
+LATE_D_VALUES = (4, 5, 6, 7)  # the D values data modes use (Table XI), all unlike zeros
+# Late entry: a probe decided by less than this many noise standard deviations is doubtful,
+# and the frame does not update the channel estimate or the loops (see _decide_probe), for
+# at most LATE_HOLD_FRAMES frames in a row (D1 and D2 are two frames).
+LATE_PROBE_MARGIN = 3.0
+LATE_HOLD_FRAMES = 2
+LATE_TAP_SNR = 4.0  # late entry: a tap of the first estimate must clear its noise by this
 LEADING_EDGE_DB = 10.0
 SUPPORT_DB = 15.0  # taps within this of the strongest count as "where the channel is"
 PROFILE_SECONDS = 2.0  # averaging time of the power-delay profile
@@ -303,11 +311,30 @@ class EqualizingDemodulator:
         postcursor: int = POSTCURSOR_TAPS,
         timing_bandwidth_hz: float = TIMING_BANDWIDTH_HZ,
         trace: list | None = None,
+        late: bool = False,
     ):
         """``trace``: a list to append a :class:`TraceUnit` to after every unit (off when
-        None, the default; it changes nothing the demodulator does)."""
+        None, the default; it changes nothing the demodulator does).
+
+        ``late``: late entry (S5), joining a transmission without its preamble. Symbol 0 is
+        then a frame (75 bps: set) start whose data-phase index is a multiple of the probe
+        pattern's period, as the late-entry search finds it; ``mode`` is provisional (the
+        largest constellation the frame length allows) and the interleaver blocks are not
+        yet known, so each probe is decided among zero and D4-D7 (:meth:`_decide_probe`) and
+        75-bps sets among all eight patterns, until :meth:`set_block_start` says where a
+        block starts."""
         self.mode = mode
         self.trace = trace
+        self.late = late
+        self.block_known = not late
+        # Late entry, until the blocks are known: each frame's probe as decided (zero or a
+        # D pattern), for finding the block boundary: (first symbol, D value or None,
+        # margin in noise standard deviations).
+        self.probe_readings: list = []
+        self._probe_doubtful = False  # this frame's probe decision was doubtful (_decide_probe)
+        self._held_frames = 0  # frames in a row that kept the previous estimate
+        self._fit_fraction = 0.0  # the signal's share of the power, from the last channel fit
+        self.set_readings: list = []  # 75 bps: the same per set (exceptional or not)
         self.sample_rate = sample_rate
         self.sps = sample_rate // T.SYMBOL_RATE
         self.carrier_hz = detection.carrier_hz
@@ -339,10 +366,12 @@ class EqualizingDemodulator:
         self._obs_start = 0
         self.align = 0
         # Symbols: known (training, probes) or decided (data). Index 0 = segment start.
-        self.n_train = detection.data_start_symbol
-        pre = symbols.preamble_tribits(mode)[-self.n_train :]
+        self.n_train = 0 if late else detection.data_start_symbol
+        # Symbol k's data-phase index is k - _origin (scrambler, frame and set positions).
+        self._origin = self.n_train
+        pre = symbols.preamble_tribits(mode)[-self.n_train :] if self.n_train else []
         self._sym = np.exp(
-            1j * np.pi / 4 * scrambler.scramble(pre, scrambler.sync_sequence(0, pre.size))
+            1j * np.pi / 4 * scrambler.scramble(pre, scrambler.sync_sequence(0, len(pre)))
         )
         self._sym_start = 0
         self._next_symbol = 0  # first symbol not yet in a processed unit
@@ -388,7 +417,8 @@ class EqualizingDemodulator:
         out = []
         while not self.lost:
             if not self.anchored:
-                if not self._sample_through(ANCHOR_SYMBOLS + self.b):
+                span = LATE_ANCHOR_SYMBOLS if self.late else ANCHOR_SYMBOLS
+                if not self._sample_through(span + self.b):
                     break
                 self._anchor()
                 continue
@@ -498,6 +528,9 @@ class EqualizingDemodulator:
         """Wide least-squares estimate over the first known symbols, to start the delay
         profile. (If an earlier path than the acquired one shows up, the first unit moves
         tap 0 to it: see _realign.)"""
+        if self.late:
+            self._anchor_late()
+            return
         ks = np.arange(self.b, ANCHOR_SYMBOLS - self.b)
         h, noise = estimate_channel(self._observations(ks), self._symbols(ks, self.wide))
         power = np.abs(h) ** 2
@@ -507,6 +540,64 @@ class EqualizingDemodulator:
         self.profile = power
         self.anchored = True
         self._next_symbol = (ANCHOR_SYMBOLS // SLOT_TRIBITS) * SLOT_TRIBITS
+
+    def _anchor_late(self) -> None:
+        """Late entry: the first channel estimate without a preamble.
+
+        With probes, least squares over the first LATE_ANCHOR_SYMBOLS from the probes alone:
+        the unknown data are left out of the regressors (zero), so they act as noise, which
+        is zero-mean and leaves the estimate unbiased. At 75 bps there are no known symbols,
+        so each set is first decided where the search found the signal (tap 0, the strongest
+        path), from the magnitude of its correlation with the eight patterns, and those
+        decisions stand in for known symbols. Either way the estimate seeds both interpolation
+        points, so the first unit already has an equaliser."""
+        span = LATE_ANCHOR_SYMBOLS
+        unit = self._unit_length()
+        for k0 in range(0, span, unit):
+            self._extend_symbols(k0, k0 + unit)
+            if self.mode.is_75bps:
+                k = np.arange(k0, k0 + unit)
+                rotation = np.exp(1j * np.pi / 4 * self._scrambling)
+                patterns = self._set_patterns((k0 - self._origin) // unit)
+                z = self._observations(k) / rotation
+                best = patterns[int(np.argmax(np.abs(patterns.conj() @ z)))]
+                self._sym[k0 - self._sym_start : k0 + unit - self._sym_start] = best * rotation
+        ks = np.arange(self.b, span - self.b)
+        regressors = self._symbols(ks, self.wide)
+        h, noise = estimate_channel(self._observations(ks), regressors)
+        # Each tap's estimate carries noise of variance noise * [(S^H S)^-1]_jj, large here
+        # (the data count as noise, and only the probes are regressors). Left in, it stays
+        # in the profile for seconds as weak paths on every tap, and every channel estimate
+        # after it is noisier (4800 bps on 2 paths, 1 Hz: ten times the preamble receiver's
+        # errors in the first second). So a tap counts only if its power clears that noise
+        # by LATE_TAP_SNR (a tap of noise alone does so with probability exp(-4)).
+        gram = regressors.conj().T @ regressors
+        floor = noise * np.real(np.diag(np.linalg.pinv(gram)))
+        power = np.abs(h) ** 2
+        power = np.where(power > LATE_TAP_SNR * floor, power - floor, 0.0)
+        if power.sum() <= 1e-12 * max(noise, 1e-30) or not np.all(np.isfinite(h)):
+            h = np.zeros_like(h)
+            h[self.b] = 1.0  # nothing to go on: keep the search's timing
+            noise = 1.0
+            power = np.abs(h) ** 2
+        self.profile = power
+        detect = h[self.b - self.a : 2 * self.b + 1]  # taps -A..B of the wide estimate
+        for centre in (span / 2 - unit, span / 2):
+            self._estimates.append((centre, detect.copy(), max(noise, 1e-12)))
+        self.anchored = True
+        self._next_symbol = span
+
+    def set_block_start(self, k: int, mode: ModeSpec) -> None:
+        """Late entry: symbol ``k`` starts an interleaver block, and ``mode`` is the mode
+        (from the D1/D2 probes, or the exceptional sets' spacing). From the next unit on,
+        the D1/D2 probes are known, 75-bps sets are decided among their four patterns, and
+        decisions use the mode's own constellation. ``k`` keeps the scrambler phase: a block
+        is a whole number of the probe pattern's periods."""
+        self.mode = mode
+        self._origin = k
+        self.block_known = True
+        n = mode.bits_per_channel_symbol
+        self._points = np.exp(1j * np.pi / 4 * symbols.CONSTELLATION[n].astype(float))
 
     # -- units -------------------------------------------------------------------------
 
@@ -520,19 +611,29 @@ class EqualizingDemodulator:
     def _unit(self, k0: int, k1: int):
         training = k1 <= self.n_train
         detect = self._rake if self.mode.is_75bps else self._equalise
+        self._probe_doubtful = False
         if not training:
             self._extend_symbols(k0, k1)
             if len(self._estimates) == 2:  # pass 1: tentative decisions
                 detect(k0, k1, commit=False)
-        h, noise = self._estimate(k1)
+        self._probe_doubtful &= self._held_frames < LATE_HOLD_FRAMES
+        self._held_frames = self._held_frames + 1 if self._probe_doubtful else 0
+        if self._probe_doubtful:  # late entry: hold the last estimate (see _decide_probe)
+            _, h, noise = self._estimates[-1]
+        else:
+            h, noise = self._estimate(k1)
         if not np.all(np.isfinite(h)):
             h, noise = np.zeros_like(h), 0.0
         signal = float(np.sum(np.abs(h) ** 2))
         centre = k1 - self.a - self._window(k1) / 2
         usable = signal > 1e-12 * max(noise, 1e-30)
         # (75 bps, data phase: a unit that is mostly noise teaches the loops nothing.)
-        learn = usable and not (
-            self.mode.is_75bps and self.in_data_phase and self._fit_fraction < TRACK_FRACTION_75
+        learn = (
+            usable
+            and not self._probe_doubtful
+            and not (
+                self.mode.is_75bps and self.in_data_phase and self._fit_fraction < TRACK_FRACTION_75
+            )
         )
         if usable:
             if learn:
@@ -703,7 +804,7 @@ class EqualizingDemodulator:
     def _equalise(self, k0: int, k1: int, commit: bool):
         """MMSE-DFE over symbols k0..k1-1; decisions go into the symbol store."""
         noise = self._estimates[-1][2]
-        position = (k0 - self.n_train) % self.mode.frame_symbols
+        position = (k0 - self._origin) % self.mode.frame_symbols
         unknown = self.mode.unknown_per_frame
         m = np.arange(-self.a, self.b + LOOKAHEAD + 1)
         past = np.arange(1, self.a + self.b + 1)
@@ -720,7 +821,43 @@ class EqualizingDemodulator:
                     self._sym[k - self._sym_start] = self._decide(k, z)
                 z_out[k - k0] = z
                 var_out[k - k0] = max((1 - gamma) / gamma, 1e-6)
+        if not self.block_known and position == 0 and k1 - k0 == self.mode.frame_symbols:
+            self._decide_probe(k0, z_out[unknown:], var_out[unknown:], commit)
         return z_out, var_out
+
+    def _decide_probe(self, k0: int, z: np.ndarray, var: np.ndarray, commit: bool) -> None:
+        """Late entry, blocks unknown: the frame's probe may be a D1/D2 pattern rather than
+        zeros. Decide which (coherently, on the equalised probe) and store it, so that the
+        channel estimate and the second pass use the symbols really sent; on the second
+        pass, record the reading for the block-boundary search.
+
+        In a fade the decision can be wrong, and a channel estimate fitted to the wrong
+        probe pulls the timing loop away for good (measured: a 1200S message on 2 paths,
+        1 Hz, lost to a misread D1 while the preamble receiver rode the same fade). So when
+        the first pass decides by less than LATE_PROBE_MARGIN, the frame keeps the previous
+        estimate and does not train the loops: for two frames at most, since when the whole
+        channel has faded every probe is doubtful, and a held estimate would never recover."""
+        unknown, k = self.mode.unknown_per_frame, self.mode.known_per_frame
+        seq = self._scrambling[unknown:]
+        candidates = [None, *LATE_D_VALUES]
+        pats = np.array(
+            [
+                np.exp(
+                    1j * np.pi / 4 * scrambler.scramble(symbols.probe_tribits(self.mode, d), seq)
+                )
+                for d in candidates
+            ]
+        )
+        stat = np.real(pats.conj() @ z)
+        order = np.argsort(stat)[::-1]
+        start = k0 + unknown - self._sym_start
+        self._sym[start : start + k] = pats[order[0]]
+        sigma = np.sqrt(np.mean(var) * k / 2)
+        margin = float((stat[order[0]] - stat[order[1]]) / sigma) if sigma > 0 else 0.0
+        if commit:
+            self.probe_readings.append((k0, candidates[order[0]], margin))
+        else:
+            self._probe_doubtful = margin < LATE_PROBE_MARGIN
 
     def _rake(self, k0: int, k1: int, commit: bool):
         """75 bps: estimate the set's symbols by combining every path (a RAKE receiver),
@@ -745,7 +882,19 @@ class EqualizingDemodulator:
         decided = self._decide_set(k0, z)
         self._sym[k0 - self._sym_start : k1 - self._sym_start] = decided
         var = max(float(np.mean(np.abs(z - decided) ** 2)), 1e-6)
+        if commit and not self.block_known:
+            self._read_set(k0, z, var)
         return z, np.full(z.size, var)
+
+    def _read_set(self, k0: int, z: np.ndarray, var: float) -> None:
+        """Late entry, blocks unknown: is this set an exceptional one (Table Xb), the last of
+        an interleaver block? Recorded as (first symbol, exceptional?, margin): the best
+        exceptional correlation less the best normal one, in noise standard deviations."""
+        rotation = np.exp(1j * np.pi / 4 * self._scrambling)
+        c = np.real((z / rotation) @ np.vstack([demap._NORMAL, demap._EXCEPTIONAL]).conj().T)
+        sigma = np.sqrt(var * z.size / 2)
+        margin = float((c[4:].max() - c[:4].max()) / sigma)
+        self.set_readings.append((k0, margin > 0, abs(margin)))
 
     def _update_set_profile(self, k0: int, k1: int) -> None:
         """75 bps: where the sets are, without the equaliser's help.
@@ -761,11 +910,10 @@ class EqualizingDemodulator:
         rotation = np.exp(1j * np.pi / 4 * self._scrambling[k - self._scrambling_start])
         obs = self._observations(k[None, :] + self.wide[:, None]) / rotation
         sets = obs.reshape(self.wide.size, -1, T.TRIBITS_PER_75BPS_SET)
-        first = (k0 - self.n_train) // T.TRIBITS_PER_75BPS_SET
+        first = (k0 - self._origin) // T.TRIBITS_PER_75BPS_SET
         energy = np.zeros(self.wide.size)
         for i in range(sets.shape[1]):
-            exceptional = symbols.is_exceptional_set(first + i, self.mode)
-            patterns = demap._EXCEPTIONAL if exceptional else demap._NORMAL
+            patterns = self._set_patterns(first + i)
             energy += np.max(np.abs(sets[:, i, :] @ patterns.conj().T) ** 2, axis=1)
         memory = np.exp(-self._unit_length() / (PROFILE_SECONDS * T.SYMBOL_RATE))
         if self.set_profile is None:
@@ -787,11 +935,19 @@ class EqualizingDemodulator:
 
     def _decide_set(self, k0: int, z: np.ndarray) -> np.ndarray:
         """The pattern (normal or exceptional, by position) that best matches the set."""
-        set_index = (k0 - self.n_train) // T.TRIBITS_PER_75BPS_SET
+        set_index = (k0 - self._origin) // T.TRIBITS_PER_75BPS_SET
         rotation = np.exp(1j * np.pi / 4 * self._scrambling)
-        correlations = demap.set_correlations(z / rotation, self.mode, set_index)[0]
-        pattern = demap.set_patterns(self.mode, set_index, [int(np.argmax(correlations))])[0]
-        return pattern * rotation
+        patterns = self._set_patterns(set_index)
+        correlations = np.real((z / rotation) @ patterns.conj().T)
+        return patterns[int(np.argmax(correlations))] * rotation
+
+    def _set_patterns(self, set_index: int) -> np.ndarray:
+        """75 bps: the patterns set ``set_index`` can be: Table Xa, or Xb for the last set
+        of a block; all eight while the blocks are not known (late entry)."""
+        if not self.block_known:
+            return np.vstack([demap._NORMAL, demap._EXCEPTIONAL])
+        exceptional = symbols.is_exceptional_set(set_index, self.mode)
+        return demap._EXCEPTIONAL if exceptional else demap._NORMAL
 
     def _update_probe_profile(self, k0: int, k1: int) -> None:
         """Data phase: the delay profile from the probes alone, over the wide span.
@@ -871,17 +1027,17 @@ class EqualizingDemodulator:
     def _extend_symbols(self, k0: int, k1: int) -> None:
         """Append frame [k0, k1): probe symbols known, data symbols to be decided."""
         if self.mode.is_75bps:  # a set: all to be decided
-            self._scrambling = scrambler.data_sequence(k0 - self.n_train, k1 - k0)
+            self._scrambling = scrambler.data_sequence(k0 - self._origin, k1 - k0)
             self._scrambling_start = k0
             self._append_symbols(k0, np.zeros(k1 - k0, complex))
             return
-        frame = (k0 - self.n_train) // self.mode.frame_symbols
+        frame = (k0 - self._origin) // self.mode.frame_symbols
         d1, d2 = self.mode.d1_d2
         last = self.mode.frames_per_block
-        d_value = {last - 2: d1, last - 1: d2}.get(frame % last)
+        d_value = {last - 2: d1, last - 1: d2}.get(frame % last) if self.block_known else None
         probe = symbols.probe_tribits(self.mode, d_value)
         unknown = self.mode.unknown_per_frame
-        start = k0 - self.n_train
+        start = k0 - self._origin
         tribits = np.concatenate([np.zeros(unknown, dtype=np.uint8), probe])
         seq = scrambler.data_sequence(start, tribits.size)
         self._scrambling = seq
