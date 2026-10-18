@@ -602,3 +602,85 @@ second of signal (2400L, 20 s, one core): 0.22 s at 9600 S/s, 0.23 s at 8000, 0.
 The receiver's diagnostics count samples at the rate it works at (`Receiver.sample_rate`,
 9600 when resampling; `Receiver.input_rate` is the rate given). Below 6800 S/s the
 300-3300 Hz signal does not fit and the rate is refused.
+
+## S5: late entry, joining a transmission without its preamble (2026-10-18)
+
+`Receiver(late_entry=True)` (`m110c-rx --late-entry`) also joins transmissions whose
+preamble it missed, as the §5.3.2.3.7.1.1 note asks: from "the modification of the known data
+at interleaver boundaries", the D1/D2 probes before each block at 150-4800 bps and the
+exceptional sets at 75 bps (`rx/lateentry.py`, SPEC_NOTES INT-029). Three steps: a search for
+the probes (or 75-bps sets) over +/-400 Hz, which fixes timing, carrier and scrambler phase;
+the equalising demodulator in a late mode, which reads each probe (each set) and finds a
+block boundary and the mode; and a check of that boundary by decoding the block after it
+(the S4 rule: fit against no interleaver). Decoding then starts at that block, with the
+encoder state unknown.
+
+### Measurements
+
+`python tools/late_entry_check.py join`: every rate and interleave, the transmission cut at a
+random point 0.25 to 2.25 s into its data, at three SNRs on a noise-only channel (8 dB
+below the mode's Table XVI point, and 3 dB either side) and on 2 paths, 2 ms, 1 Hz (75 bps:
+5 ms, 5 Hz) at and around the Table XVI point, four seeds each: 336 receptions. The bit error
+rate is over the end of the message, which both receivers deliver, against a preamble
+receiver given the whole transmission.
+
+- **Joins**: 318 of 336, all in the right mode. All 18 misses are on the noise-only
+  channel at its two lowest SNRs: 75 bps at -9 dB (8) and -6 dB (1), 150 bps at -6 dB (4)
+  and 150L at -3 dB (1), 300L at -4 dB (2), 600L at -4 and -1 dB (one each). Most are
+  below where the preamble receiver decodes either; 150L at -3 dB and 600L at -1 dB are
+  not (the preamble receiver: no errors, and 6e-4).
+- **Signal needed** (from the cut to the start of the first block delivered): 1.4-1.6 s with
+  zero or short interleave, at 4800 and at 75S (of which 1 s is the settling time below),
+  2-5 s at the lowest SNRs; 3.1-7.4 s with long interleave, 10-13 s near the lowest SNRs
+  and once 27 s (the next block boundary is up to 4.8 s away, and a missed D1/D2 costs a
+  block).
+- **Errors**: where the preamble receiver decodes cleanly, so does the late one, except on
+  fading channels: there, in 11 of 288 receptions (a separate run, all rates but 75, eight
+  seeds) the late receiver was materially worse (BER above twice the preamble receiver's
+  plus 1e-3). The largest gaps in the table, 4800 bps at 27 dB and 2400S at 15 dB fading
+  (2e-2 against 1e-3), are one reception each, on the same channel realisation, with the
+  errors in the first two seconds after joining. Late is sometimes better: it joins after
+  a fade that cost the preamble receiver its message.
+- **Noise alone** (`noise --seeds 20`): 20 minutes, 0 bytes, 0 messages.
+- **No harm** (`harm`): 56 transmissions with their preambles, every mode, on the fading
+  channel at the Table XVI SNR: all 56 received identically with late entry on and off.
+
+### What it took
+
+The first end-to-end runs showed late entry joining reliably and decoding worse. Each gap
+came from something the preamble supplies:
+
+- *Probes before the blocks are known.* At first the late demodulator took every probe
+  for the zero pattern, and a D1/D2 frame then looked like a deep fade. It now decides each
+  probe (zero or D4-D7) on the equalised signal and fits its channel estimate to the probe
+  so decided. In a fade that decision can be wrong, and an estimate fitted to the wrong
+  probe pulled the timing loop away for good (a 1200S message lost while the preamble
+  receiver rode the same fade). So a probe decided by under 3 noise standard deviations
+  keeps the previous estimate and trains no loop, for at most two frames (more, and a
+  channel that has faded entirely would never be estimated again). Measured on the fading
+  run: 11 receptions worse than the preamble receiver with the hold, 22 without.
+- *The first channel estimate.* Without a preamble it comes from the probes alone, the
+  data counting as noise, so every tap of the wide estimate carries estimation noise. Left
+  in, that noise sat in the power-delay profile for seconds as weak paths on every tap, and
+  every channel estimate after it was noisier: at 4800 bps on the fading channel, ten
+  times the preamble receiver's errors in the first second. Now the estimate's own noise
+  is subtracted, and a tap counts only if it clears that noise fourfold (in one case: 644
+  errors in the first second down to 47, the preamble receiver 10).
+- *The time base.* The search puts symbol 0 on a whole probe period, which can lie before
+  the first sample it holds; the demodulator was fed from the first sample held, and its
+  time base slipped by the difference: the channel started up to 10 symbols from tap 0.
+  The equaliser's realignment usually recovered, but at low SNR it could settle half a
+  symbol off (a 600L message at -1 dB: BER 3e-2, the preamble receiver 2e-4; now
+  identical). The search now pads with zeros.
+- *Settling.* Decoding starts at the first block at least 1 s (2400 symbols) after the
+  first channel estimate, so the profile and the loops have settled; without it 2400S on
+  the fading channel lost bits in the first two blocks.
+- *Asynchronous characters.* At 300, 150 and 75 bps with zero or short interleave a block
+  is not a whole number of bytes, so the UART decoder may start mid-character. It now picks
+  the start-bit phase that frames best over its first 32 characters; before, 75S joined
+  cleanly and delivered garbage.
+
+The rules for the boundary itself held from the prototypes: two consecutive confident D
+probes (or, at 75 bps, a confident exceptional set and the spacing of the next ones) and the
+decoding check. Two wrong-mode joins in the first run (300L on the fading channel, 75S at
+-6 dB) did not recur after the fixes above.

@@ -288,7 +288,7 @@ against Table XVI.
 
 ## 6. Stretch milestones (post-1.0)
 
-**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5.
+**Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5 (done).
 Then the modem program (milestones to be written after the network-stack discussion below):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
@@ -316,27 +316,17 @@ that change, `tools/toystack.py` for link-layer experiments.
   shall use the modification of the known data at interleaver boundaries to synchronize
   without a preamble and determine the correct data rate and mode of operation"): the D1/D2
   probes before each block at 150-4800 bps, the exceptional sets at 75 bps.
-  **In progress.** Measured with prototypes (not yet in the package):
-  - *Search* (stage 1): correlate the known probe chunks (scrambled zeros; the pattern
-    repeats every 480 symbols with 48-symbol frames, 160 with 40) or, at 75 bps, the best of
-    the four set patterns, coherently per chunk and in power across 0.3-0.4 s, over +/-400 Hz
-    in 25-Hz bins and four sampling phases. 396 receptions, every rate, -6 to 10 dB noise
-    only and 0 to 20 dB on 2 paths 2 ms 1 Hz: all locked (on the first path or the second),
-    and the right family (48, 40, 75) scored highest in all. Noise alone peaked at 0.16
-    (200 windows); the weakest signal at 0.22. The prototype costs about 1.4 s of CPU per
-    0.6-s window for all three families: it must be vectorised before it can run
-    continuously.
-  - *Block boundary and mode* (stage 2), reading probes and sets without a channel
-    estimate: right on noise-only channels from -3 dB, at every interleave; with fading,
-    right for short interleave but mostly wrong for long (a fade makes two zero probes look
-    like a D1/D2 pair long before the real one, 4.8 s away), and 2-12% of normal 75-bps
-    sets read as exceptional. Next: read the probes and sets through the equalising
-    demodulator (coherent, and fades known from its error variance), and verify every
-    candidate boundary by decoding a block (the Viterbi fit collapses when the deinterleaver
-    is misaligned, as in S4), which also rejects false locks on noise.
-  - Synchronous byte alignment survives late entry where a block holds a whole number of
-    bytes: every mode but 300, 150 and 75 bps with zero or short interleave (180, 90 and 45
-    user bits per block). For those, asynchronous framing finds its own characters.
+  **Done** (2026-10-18): `rx/lateentry.py`, opt-in (`Receiver(late_entry=True)`,
+  `m110c-rx --late-entry`); decisions in SPEC_NOTES INT-029, measurements in
+  docs/PERFORMANCE.md (S5), `tools/late_entry_check.py` to repeat them. A search for the
+  probe pattern (or the 75-bps sets) over +/-400 Hz, then the equalising demodulator in a
+  late mode reading each probe and set, then every candidate boundary checked by decoding
+  the block after it. Over 336 cut transmissions (every mode, noise only and fading): 318
+  joined, none in the wrong mode, 1.5 s of signal with zero or short interleave and 3-7 s
+  with long; noise alone (20 min) delivered nothing, and messages with preambles came out
+  unchanged. On fading channels the late receiver is still worse than the preamble
+  receiver in about 4% of receptions (11 of 288). Async framing finds its own
+  characters where a block is not whole bytes (300, 150, 75 bps, zero or short).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
 - **S8**: host interfaces and a link layer.

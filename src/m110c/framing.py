@@ -85,6 +85,10 @@ def async_encode(data: bytes, fmt: AsyncFormat) -> np.ndarray:
     return np.concatenate(frames, axis=1).reshape(-1)
 
 
+#: Late entry: characters' worth of bits held to find the character phase (S5).
+PHASE_FRAMES = 32
+
+
 class AsyncDecoder:
     """Streaming receiver-side deframer: bits in, characters out.
 
@@ -95,15 +99,28 @@ class AsyncDecoder:
     the line idles at 1, the decoder falls back into step at the next idle gap.
     """
 
-    def __init__(self, fmt: AsyncFormat):
+    def __init__(self, fmt: AsyncFormat, find_phase: bool = False):
+        """``find_phase``: the bits start somewhere inside a character stream (a late entry,
+        S5). Characters sent back to back leave no idle gap to fall into step at, and a
+        start-bit hunt can lock onto a wrong phase for good. So the first
+        ``PHASE_FRAMES`` characters' worth of bits are held, and the phase at which the most
+        frames have a 0 start bit and 1 stop bits is taken."""
         self.fmt = fmt
         self.framing_errors = 0
         self.parity_errors = 0
         self._pending = np.zeros(0, dtype=np.uint8)
+        self._find_phase = find_phase
 
-    def process(self, bits: np.ndarray) -> bytes:
-        """Accept more bits; return every complete character."""
+    def process(self, bits: np.ndarray, final: bool = False) -> bytes:
+        """Accept more bits; return every complete character. ``final``: no more bits will
+        come (a phase still being looked for is then chosen from what there is)."""
         bits = np.concatenate([self._pending, np.asarray(bits, dtype=np.uint8)])
+        if self._find_phase:
+            if bits.size < PHASE_FRAMES * self.fmt.frame_bits and not final:
+                self._pending = bits
+                return b""
+            bits = bits[self._best_phase(bits) :]
+            self._find_phase = False
         out = bytearray()
         n_frame = self.fmt.frame_bits
         i = 0
@@ -124,3 +141,13 @@ class AsyncDecoder:
             i += n_frame
         self._pending = bits[i:].copy()
         return bytes(out)
+
+    def _best_phase(self, bits: np.ndarray) -> int:
+        """The bit offset (within one frame) at which the most frames look like frames."""
+        n = self.fmt.frame_bits
+        scores = []
+        for phase in range(n):
+            frames = bits[phase : phase + (bits.size - phase) // n * n].reshape(-1, n)
+            good = (frames[:, 0] == 0) & frames[:, n - self.fmt.stop_bits :].all(axis=1)
+            scores.append(int(good.sum()))
+        return int(np.argmax(scores))

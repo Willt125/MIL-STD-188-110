@@ -46,7 +46,7 @@ could be tested.
 | INT-024 MGD before Table X at 75 bps | **Confirmed** (75S) | EOM found with the MGD and not without; 75L payload too low-entropy to tell |
 | Table XI (all 13 data-mode D1/D2 pairs) | **Confirmed** | every data mode identified from its preamble |
 | INT-027 Doppler spread = 2σ; INT-028 E.5.2 erratum | Resolved by text | Appendix E itself; simulator validated against E.7 |
-| INT-012, 014, 015, 017, 018, 022, 023, 026 | n/a | implementer choices; recordings cannot confirm or refute them |
+| INT-012, 014, 015, 017, 018, 022, 023, 026, 029 | n/a | implementer choices; recordings cannot confirm or refute them |
 
 ---
 
@@ -321,6 +321,28 @@ rounded". That is dimensionally wrong (2 ms ÷ 9600 S/s ≈ 2×10⁻⁷). E.4.2 
 sampling period", which gives the intended number of samples (19.2 → 19 at 9600 S/s).
 **Decision:** L = round(delay × sample rate). **Tests:** taps at 0 and 19 (2 ms), 48 (5 ms),
 96 (2 ms at 48 kHz), and 5 for 0.5 ms (4.8 rounds up; truncation would give 4).
+
+### INT-029: Late entry: how the receiver joins without a preamble. *Unspecified, Medium*
+§5.3.2.3.7.1.1 note: the receiver "shall use the modification of the known data at
+interleaver boundaries to synchronize without a preamble and determine the correct data rate
+and mode of operation". It says what to use, not how. **Decisions** (S5,
+`rx/lateentry.py`, opt-in `--late-entry`):
+- At 150-4800 bps the modification is the D1/D2 pair in the last two probes of each block
+  (§5.3.2.3.7.1.2); two consecutive probes read as D patterns (only D = 4..7 occur in data
+  modes, all orthogonal to the zero probe) name the mode and end a block.
+- At 75 bps it is the exceptional set (Table Xb) that ends each block (INT-010). Short and
+  long interleave share no D1/D2 there, so the interleave comes from the exceptional sets'
+  spacing: 45 sets (short, or zero, INT-010) or 360 (long).
+- Until the blocks are known, the equalising demodulator decides each probe among zero and
+  D = 4..7 itself, and fits its channel estimate to the probe so decided; a probe decided by
+  a small margin (a fade) keeps the previous estimate instead, for two frames at most.
+- A boundary is accepted only when decoding the block that follows it fits the code better
+  than no interleaver does (the S4 rule, INT-012), which also tells zero from short.
+- Decoding starts at that block with the encoder state unknown (all states equally likely,
+  unlike INT-023 at a message start).
+- Synchronous byte boundaries survive only where a block carries whole bytes: not at 300,
+  150 and 75 bps with zero or short interleave (180, 90 and 45 user bits per block); there
+  the receiver says so, and asynchronous framing (INT-025) finds its own characters.
 
 ---
 

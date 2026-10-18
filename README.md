@@ -86,7 +86,13 @@ the long interleaver, 6–11 s at 75 bps, where the deinterleaver and the end-of
 dominate), using 0.1–0.4 s of one CPU core per second of signal (docs/PERFORMANCE.md, M12).
 Zero and short interleave share their preambles; the receiver tells them apart from the data
 (within the first 0.6-s block; `--interleave short` or `zero` assumes one instead).
-Options: `--async`/`--msb-first` (must match the sender), `--interleave`,
+With `--late-entry` it also joins a transmission already in progress, its preamble missed:
+it finds the probes (or, at 75 bps, the exceptional sets) that mark each interleaver block,
+reads the mode from them, checks the block boundary by decoding a block, and delivers the
+rest of the message (about 1.5 s of signal to join with zero or short interleave, 3–7 s
+with long; docs/PERFORMANCE.md, S5). At 300, 150 and 75 bps with zero or short interleave
+a block is not a whole number of bytes, so use `--async` there.
+Options: `--async`/`--msb-first` (must match the sender), `--interleave`, `--late-entry`,
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (any rate above 6800;
 WAV: from the header; rates that are not multiples of 2400 are resampled to 9600 first, for
 about 5% more CPU), `--no-equalizer` (the simpler

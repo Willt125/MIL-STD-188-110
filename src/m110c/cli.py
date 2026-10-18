@@ -239,6 +239,12 @@ def rx_parser() -> argparse.ArgumentParser:
         "stream, as synchronous bytes even with --async (INT-019)",
     )
     p.add_argument(
+        "--late-entry",
+        action="store_true",
+        help="also join transmissions already in progress, without their preamble, at the "
+        "next interleaver block (S5; long interleave: up to about 10 s; more CPU while idle)",
+    )
+    p.add_argument(
         "--invert-spectrum",
         action="store_true",
         help="input is lower sideband (spectrum inverted, INT-021)",
@@ -258,13 +264,23 @@ def _offset(carrier_hz: float) -> str:
     return f"{round(carrier_hz - T.CARRIER_HZ, 1) + 0.0:+.1f}"
 
 
+def _start_seconds(msg, sample_rate) -> float:
+    """When the message starts: its preamble, or (late entry) the block it was joined at."""
+    det = msg.detection
+    start = det.segment_start
+    if msg.late_entry:
+        start += det.data_start_symbol * sample_rate / T.SYMBOL_RATE
+    return max(start, 0) / sample_rate
+
+
 def _describe_start(msg, sample_rate) -> str:
     det = msg.detection
     mode = msg.mode
     if msg.interleave_detection == "deciding":  # not yet told from the data
         mode = f"{msg.mode.rate} bps, zero or short interleave,"
+    found = "joined without preamble" if msg.late_entry else "preamble"
     return (
-        f"m110c-rx: {mode} preamble at {max(det.segment_start, 0) / sample_rate:.2f} s, "
+        f"m110c-rx: {mode} {found} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), receiving"
     )
 
@@ -279,11 +295,12 @@ def _describe(msg, sample_rate) -> str:
         end = "input ended, no EOM"
     snr = "n/a" if msg.snr_db is None else f"{msg.snr_db:.1f} dB"
     return (
-        f"m110c-rx: {msg.mode} at {max(det.segment_start, 0) / sample_rate:.2f} s, "
+        f"m110c-rx: {msg.mode} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
         f"clock {msg.clock_ppm:+.0f} ppm, SNR {snr}, "
         f"{msg.n_bytes} bytes, {end}"
         + (" (interleave told from the data)" if msg.interleave_detection else "")
+        + (" (late entry)" if msg.late_entry else "")
     )
 
 
@@ -315,6 +332,7 @@ def rx_main(argv=None) -> int:
                 invert_spectrum=args.invert_spectrum,
                 equalize=args.equalize,
                 voice=args.voice,
+                late_entry=args.late_entry,
             )
         except ValueError as exc:  # a sample rate too low for the signal
             print(f"m110c-rx: {exc}", file=sys.stderr)
