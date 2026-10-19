@@ -135,6 +135,13 @@ be measured before this is settled (§6). Other 110 modems recommend wider pulse
 (Appendices C and D of 110C suggest a roll-off of 0.35), so a third-party 110 modem may not
 be usable on US amateur HF as it stands.
 
+**D6 [PROPOSED] Bandwidth through the host interface.** Refuse ARDOP bandwidths below
+2000 Hz; accept `2000MAX` and `2000FORCED` as the widest a host can ask for; answer the
+`ARQBW` query with the accepted ARDOP value; report the true bandwidth (2800) in `CONNECTED`.
+Pat parses `ARQBW` replies strictly and never parses `CONNECTED`'s bandwidth (§5), so this
+works with Pat; Winlink Express must be tested. Documented as a deviation from ARDOP's
+meaning of `2000`.
+
 ## 5. ARDOP, checked against 110
 
 Two documents: the ARDOP specification (Rev 0.3.1, 25 March 2015: waveform, frames,
@@ -179,16 +186,73 @@ unchanged. The command groups and what each needs from us:
 | Identification: `SENDID`, `CWID`, `FECID`; data tagged `IDF` | Direct (D1) |
 | Keying: `PTT TRUE\|FALSE` (the host must key within 50 ms), `LEADER`, `TRAILER` | `LEADER` has no 110 meaning (the preamble is fixed); it becomes the keying lead time. Turnaround timing is ours to measure (§6) |
 | Probing: `PING <call> <repeats>`, `ENABLEPINGACK`; replies `PING`, `PINGACK`, `PINGREPLY` with S/N (in 3 kHz) and a decode quality | Direct, and useful: the S/N report is what our mode choice needs. Ours reads 3-4 dB low until calibrated (§3) |
-| Broadcast: `FECSEND`, `FECREPEATS <0-5>`, `FECMODE <ARDOP mode name>`; data tagged `FEC` or `ERR` | `FECMODE`'s values are ARDOP's waveforms. We need our own names (e.g. a 110 rate and interleave) and a decision on ARDOP names sent by hosts that only know those **[OPEN]** |
-| Bandwidth: `ARQBW <200\|500\|1000\|2000>MAX\|FORCED`; `REJECTEDBW`; the bandwidth in `CONNECTED` | The one real mismatch: 110 has one bandwidth, about 2.8 kHz (D5), wider than ARDOP's widest setting. Settings of 200-1000 Hz must be refused (`FAULT`, or `REJECTEDBW` on a connection), never ignored: hosts use them to keep within band plans. But refusing 2000 too would refuse every host. Proposed: accept `2000MAX` and `2000FORCED` as "the widest the host can ask for", document that 110 then occupies 2.8 kHz, and report the true bandwidth in `CONNECTED` if the hosts' parsers allow a value outside ARDOP's list, else 2000 with the deviation documented **[OPEN]** |
+| Broadcast: `FECSEND`, `FECREPEATS <0-5>`, `FECMODE <ARDOP mode name>`; data tagged `FEC` or `ERR` | `FECMODE`'s values are ARDOP's waveforms. Pat never uses broadcast, so no host constrains it yet: our own names (a 110 rate and interleave), and a `FAULT` for ARDOP's |
+| Bandwidth: `ARQBW <200\|500\|1000\|2000>MAX\|FORCED`; `REJECTEDBW`; the bandwidth in `CONNECTED` | The one real mismatch: 110 has one bandwidth, about 2.8 kHz (D5), wider than ARDOP's widest setting. Settings of 200-1000 Hz are refused (`FAULT`, or `REJECTEDBW` on a connection), never ignored: hosts use them to keep within band plans. `2000MAX` and `2000FORCED` are accepted as "the widest the host can ask for", and the documentation says that 110 then occupies 2.8 kHz. `CONNECTED` reports the true bandwidth; the `ARQBW` query answers with an ARDOP value (D6) |
 | Radio control: `RADIO*` (frequency, PTT port, filters, models) | Optional in ARDOP too; out of scope at first (a `FAULT`). Hamlib could serve it later |
-| Data port: host to modem `D:` + 2-byte length + bytes; modem to host `d:` + length + `ARQ`, `FEC`, `ERR` or `IDF` + bytes | Direct |
+| Data port: host to modem `D:` + 2-byte length + bytes; modem to host `d:` + length + `ARQ`, `FEC`, `ERR` or `IDF` + bytes | Direct (over TCP without the prefixes: see below) |
 
-Two cautions. First, the document is "Rev 0.2" and partly provisional; deployed modems and
-hosts may differ from it in small ways (for example whether the `C:` and `D:` prefixes are
-sent over TCP). The reference for what works is therefore what Pat's ARDOP driver (open
-source) sends and parses, read and tested against before we claim compatibility. Second,
-Winlink Express is closed: compatibility with it can only be tested, not read.
+Two cautions. First, the document is "Rev 0.2" and partly provisional, and deployed modems
+and hosts differ from it (below). Second, Winlink Express is closed: compatibility with it
+can only be tested, not read.
+
+### What Pat actually sends and expects
+
+Pat drives ARDOP through the ARDOP package of its library, wl2k-go (`transport/ardop`, MIT
+licence, read at commit `efde6fb`, October 2025; Pat itself at `2e6a8d1`, April 2026). Read
+for behaviour only; nothing is copied. Where it differs from the 2017 document, the code is
+what deployed modems answer to.
+
+**Framing over TCP.** No `C:`, `c:`, `D:` or `d:` prefixes and no CRCs (those are the serial
+form's). Commands and replies are text lines ending in `\r`. Data from host to modem: a
+2-byte big-endian length, then the bytes. Data from modem to host: a 2-byte big-endian length
+counting what follows, then `ARQ`, `FEC`, `ERR` or `IDF`, then the bytes.
+
+**What Pat sends.** On opening: `INITIALIZE`, `STATE` (and `CODEC TRUE` if the modem is
+`OFFLINE`), `PROTOCOLMODE ARQ`, `ARQTIMEOUT 90`, `LISTEN FALSE` (the same default as D1),
+`MYCALL`, `GRIDSQUARE`, then from its configuration `ARQBW`, `CWID`, and `VERSION` (also
+used as a liveness check). When dialling: `ARQBW` (query, then set) only if a bandwidth is
+given, then `ARQCALL <call> 10`. Also `MYAUX`, `SENDID` (a periodic beacon), `DISCONNECT`,
+`ABORT`. Never `FECSEND` or anything about broadcast, `PING`, `BREAK`, or the radio commands.
+
+**Behaviour a modem must have**, found in the code and not in the document:
+
+- *Every command is answered by a line starting with the same command word* (optionally
+  followed by `now`), or by `FAULT <text>`. Pat waits for one or the other.
+- *A `BUFFER <n>` line after every block of data written.* Pat's write call does not
+  return until one arrives, and its flush before disconnecting waits for `BUFFER 0`.
+- *Received data in chunks well below 4096 bytes.* The driver hands each chunk whole to a
+  reader whose buffer is typically 4096 bytes, and stops with an error if a chunk does not
+  fit. ARDOP's frames are much smaller; ours should be delivered in pieces of at most a
+  kilobyte.
+- *`ARQ` data only while connected* (Pat discards it otherwise).
+- *For an incoming connection, `TARGET <call>` before `CONNECTED <call> <bw>`.* Pat ignores
+  a `CONNECTED` without one.
+- *While dialling, a `NEWSTATE DISC` means the connection failed.* Pat reads only the
+  callsign from `CONNECTED`; the bandwidth field is never parsed as a number.
+- *The `ARQBW` query must answer with one of ARDOP's eight values* (`200MAX` ...
+  `2000FORCED`); Pat parses it and fails the dial otherwise.
+- *ID frames as data tagged `IDF`, containing `CALL:[GRID]`*, which Pat uses for its list
+  of stations heard.
+- *Timeouts on closing.* Pat waits up to 30 s for `BUFFER 0`, then sends `DISCONNECT` and
+  waits up to 30 s for `DISCONNECTED` or `NEWSTATE DISC`, then sends `ABORT`. At 75 or
+  150 bps 30 s is only 280-560 bytes, so a session's tail could be cut; B2F's own closing
+  handshake normally leaves little queued by then. To be tested.
+- *`PTT TRUE|FALSE` and `BUSY TRUE|FALSE` as asynchronous lines.* Pat keys the radio itself
+  when configured to, and waits for a clear channel before dialling.
+
+**Bandwidth, in practice.** Pat's default configuration sets `ARQBW 500MAX` on opening and
+treats a refusal as fatal, and its list of gateway channels carries each gateway's ARDOP
+bandwidth into the dial (for example `bw=500MAX`). With D6, a Pat user sets
+`arq_bandwidth` to `2000MAX` (or leaves it empty) for this modem, and dials a 500 Hz ARDOP
+channel only by choosing to. This is the refusal working as intended: nobody puts a
+2.8 kHz signal on a channel listed as 500 Hz without deciding to.
+
+**Frequency.** Pat converts a listed channel frequency to a dial frequency by subtracting
+1500 Hz for ARDOP, the centre of ARDOP's audio. The 110 carrier is at 1800 Hz, so on a dial
+frequency set by Pat our signal is centred 300 Hz above the listed channel. Moving the
+carrier to 1500 Hz would put the 2.8 kHz signal at about 100-2900 Hz, at the edges of an SSB
+transmitter's passband **[OPEN]**: keep 1800 Hz and document the offset, or offer a 1500 Hz
+carrier setting for operators whose radios pass it.
 
 ### The bandwidth fact
 
@@ -220,12 +284,13 @@ with the receiver's filter matched) before D5 is settled.
 
 ## 6. Open questions and facts still needed
 
-- **Pat's ARDOP driver**: which commands it sends, how it parses `CONNECTED`'s bandwidth
-  and `ARQBW`, and what it does with an unknown value; the same tested (not read) for
-  Winlink Express.
+- **Winlink Express**: the behaviour §5 found in Pat, tested (it cannot be read).
+- **The carrier frequency**: 1800 Hz (110's) with a documented 300 Hz offset from ARDOP
+  channel listings, or a 1500 Hz option (§5).
+- **Closing at low rates**: whether Pat's 30-s flush and disconnect timeouts cut sessions
+  at 75 and 150 bps.
 - **The -26 dB bandwidth on a real transmitter** at roll-off 0.15 (our numbers are at
   audio), and the receiver's cost of the narrower pulse, measured properly (D5).
-- **Broadcast mode names**: our own `FECMODE` values, and what to do with ARDOP's.
 - **Keying latency and turnaround** on real radios (PTT, VOX, CAT), for leader timing
   and timeouts: the audio and keying milestone.
 - **Fade lengths** on the channels that matter (NVIS; 2 paths at 2 ms and 1 Hz; 5 ms and
@@ -240,8 +305,8 @@ with the receiver's filter matched) before D5 is settled.
 
 ## 7. Next steps
 
-1. Read Pat's ARDOP driver against §5's table; settle the bandwidth report and the
-   broadcast mode names.
+1. Done: Pat's ARDOP driver read (§5); D6 proposed. Its fbb package (B2F) is the next
+   thing to read when B2F comes up.
 2. Make the transmit roll-off a setting and measure what 0.15 costs (D5).
 3. Prototype frames and selective-repeat ARQ sessions in `tools/toystack.py` over the
    channel simulator, with B2F-sized traffic, before writing milestones.
