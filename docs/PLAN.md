@@ -289,7 +289,8 @@ against Table XVI.
 ## 6. Stretch milestones (post-1.0)
 
 **Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5 (done).
-Then the modem program (milestones to be written after the network-stack discussion below):
+Then the modem program (milestones to be written after the network-stack discussion,
+docs/NETWORK.md):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
 on the third-party recordings locally (`M110C_RECORDINGS`), and a CI version needs
@@ -459,6 +460,10 @@ Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixe
 
 
 ### The network stack: agenda for a discussion before the modem program
+
+**Discussed 2026-10-19: see [NETWORK.md](NETWORK.md)** for the goals, the decisions (amateur
+first and legal by default; Winlink interoperability through B2F and an ARDOP-compatible host
+interface) and the open questions. The agenda below is kept as recorded.
 
 **[TO DISCUSS]** Recorded 2026-10-15 from the user's goals; nothing here is decided. The
 aim is a stack that is an educational toy and still usable day to day, as chibicc and QOI
