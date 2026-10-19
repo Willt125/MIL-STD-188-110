@@ -120,32 +120,75 @@ format. Below it, what ARDOP and VARA offer, built our way:
 
 One session at a time, as amateur stations work; not 5066's several clients over one link.
 
-**D4 [PROPOSED] Compatible host interface, not "ARDOP".** The ARDOP specification
+**D4 [DECIDED] Compatible host interface, not "ARDOP".** The ARDOP specification
 (Rev 0.3.1, §3.0) reserves "ARDOP compatible or compliant" for implementations that pass its
 conformance tests, which concern ARDOP's own waveform. Ours is a different waveform: we
 emulate the host interface only, and the documentation says "a host interface compatible
-with ARDOP's", never "ARDOP".
+with ARDOP's", never "ARDOP". Section 5 checks the interface; it fits.
 
-## 5. The ARDOP specification, checked (Rev 0.3.1, 25 March 2015)
+**D5 [PROPOSED] A narrower pulse for amateur use.** Part 97's 2.8 kHz limit on HF data
+(confirmed by the user, 2026-10-19), measured at -26 dB, is exceeded by our roll-off of 0.25
+(3.0 kHz). The transmitter's roll-off becomes a setting, with 0.15 (2.78 kHz at audio) as
+the amateur default; 0.25 stays available where the rules allow it. The margin at 0.15 is
+thin (20 Hz at audio, before a real transmitter's distortion), so the on-air spectrum must
+be measured before this is settled (§6). Other 110 modems recommend wider pulses still
+(Appendices C and D of 110C suggest a roll-off of 0.35), so a third-party 110 modem may not
+be usable on US amateur HF as it stands.
 
-What the specification covers: ARDOP's waveform and frames, its ARQ and FEC protocol rules,
-and its state machine. What it does not: the host interface. Appendix E is a placeholder
-that points to "a separate detailed Host interface document". So the question "does the
-host interface fit 110?" is **[OPEN]** until we have that document; the practical reference
-is what Pat's ARDOP driver (open source) actually sends and expects.
+## 5. ARDOP, checked against 110
 
-What the specification does tell us, and how 110 maps onto it:
+Two documents: the ARDOP specification (Rev 0.3.1, 25 March 2015: waveform, frames,
+protocol rules, state machine) and the Host Interface Spec for the ARDOP Protocol (Rev 0.2,
+15 October 2017, Muething and Wiseman). Neither is copied here; both are summarised only
+as far as the fit with 110 needs.
+
+### The protocol (specification Rev 0.3.1)
+
+How ARDOP's protocol maps onto 110:
 
 | ARDOP | What it means for us |
 |---|---|
 | ARQ between two callsigns (CONREQ/CONACK; ISS sends, IRS receives; roles swap with IDLE and BREAK; DISC/END; a session timeout) | The same session model D3 needs. Our state machine can mirror its states (DISC, ISS, IRS, ISS-to-IRS, FEC send, FEC receive), which the host interface reports |
 | One data frame per transmission, ACK/NAK with a 5-bit decode quality, even/odd toggling against duplicates | Stop-and-wait. Fine for ARDOP's short leaders; for 110, with 0.6 s or 4.8 s per preamble, we keep many frames per transmission (D3). The host does not see the difference |
-| Bandwidths of 200, 500, 1000 and 2000 Hz, forced or negotiated (ARQBW) | 110 has one bandwidth, about 3 kHz (below). Hosts that ask for 2000 Hz or less: either refuse, or accept and say so in the documentation **[OPEN]** |
+| Bandwidths of 200, 500, 1000 and 2000 Hz, forced or negotiated (ARQBW) | 110 has one bandwidth, about 2.8 kHz (below), wider than ARDOP's widest. See the host interface's bandwidth row |
 | ID frame at least every 10 minutes and at the end of a session, with optional CW ID | Matches D1; we need the same (an ID frame in our own framing, which keeps every transmission identified) |
 | Busy detector, listen before transmit, connection refused when busy (CONREJBSY) | We need a busy detector. The late-entry search (S5) detects 110 signals, but not other modes; a general energy-and-occupancy detector is also needed |
 | Automatic leader timing from measured round trips (Fig. D-1); VOX delays up to 500 ms | We need the same: keying latency differs between radios and interfaces. Part of the audio and keying milestone |
 | Session ID: an 8-bit hash of both callsigns, guarding against a neighbouring session's frames | Worth borrowing in our frame header |
 | FEC broadcast: 0-5 repeats, receivers pass only error-free frames, others flagged as containing errors | The broadcast mode of D3; the flag "containing errors" is a good host-interface idea |
+
+### The host interface (Rev 0.2, 2017)
+
+The host talks to the modem ("TNC") over TCP, on two consecutive ports (8515 and 8516 by
+default): text commands and asynchronous replies on the first, data on the second. A serial
+form (WA8DED or SCS CRC host mode, and a PACTOR emulation) also exists; TCP is what Pat and
+Winlink Express use, so it comes first and the serial forms are out of scope for now.
+
+**Verdict: it fits.** The interface describes a session (connect to a callsign, send and
+receive bytes, disconnect), a broadcast mode and the radio around them. It has no notion of
+ARDOP's frames or of stop-and-wait, so 110 with many frames per transmission sits behind it
+unchanged. The command groups and what each needs from us:
+
+| Commands and replies | Fit for 110 |
+|---|---|
+| Identity and setup: `MYCALL`, `MYAUX`, `GRIDSQUARE`, `INITIALIZE`, `VERSION`, `CLOSE`, `CODEC`, sound devices, `DRIVELEVEL` | Direct |
+| Sessions: `ARQCALL <call> <repeats>`, `LISTEN`, `PROTOCOLMODE ARQ\|FEC`, `DISCONNECT`, `ABORT`, `ARQTIMEOUT`; replies `NEWSTATE`, `PENDING`, `CANCELPENDING`, `TARGET`, `CONNECTED <call> <bw>`, `DISCONNECTED`, `STATUS`, `FAULT` | Direct: the session layer of D3 must have these states (`DISC`, `ISS`, `IRS`, `IRStoISS`, `IDLE`, `QUIET`, `FECSend`, `FECRcv`, `OFFLINE`). `LISTEN` defaults to true in ARDOP; ours defaults to false (D1) |
+| Turn-taking: `AUTOBREAK`, `BREAK` | Direct: who holds the turn in a half-duplex session |
+| Queues: `BUFFER` (bytes queued, including sent but unacknowledged), `DATATOSEND`, `PURGEBUFFER`, `RESTOREBUFFER` | Direct; with selective repeat, "unacknowledged" is per frame |
+| Channel: `BUSYDET`, `BUSYBLOCK`, `BUSY TRUE\|FALSE`, `REJECTEDBUSY`, `SQUELCH`, `TUNERANGE` | Needs our busy detector (§6). `TUNERANGE` (up to ±200 Hz) maps to the acquisition's offset range (±400 Hz) |
+| Identification: `SENDID`, `CWID`, `FECID`; data tagged `IDF` | Direct (D1) |
+| Keying: `PTT TRUE\|FALSE` (the host must key within 50 ms), `LEADER`, `TRAILER` | `LEADER` has no 110 meaning (the preamble is fixed); it becomes the keying lead time. Turnaround timing is ours to measure (§6) |
+| Probing: `PING <call> <repeats>`, `ENABLEPINGACK`; replies `PING`, `PINGACK`, `PINGREPLY` with S/N (in 3 kHz) and a decode quality | Direct, and useful: the S/N report is what our mode choice needs. Ours reads 3-4 dB low until calibrated (§3) |
+| Broadcast: `FECSEND`, `FECREPEATS <0-5>`, `FECMODE <ARDOP mode name>`; data tagged `FEC` or `ERR` | `FECMODE`'s values are ARDOP's waveforms. We need our own names (e.g. a 110 rate and interleave) and a decision on ARDOP names sent by hosts that only know those **[OPEN]** |
+| Bandwidth: `ARQBW <200\|500\|1000\|2000>MAX\|FORCED`; `REJECTEDBW`; the bandwidth in `CONNECTED` | The one real mismatch: 110 has one bandwidth, about 2.8 kHz (D5), wider than ARDOP's widest setting. Settings of 200-1000 Hz must be refused (`FAULT`, or `REJECTEDBW` on a connection), never ignored: hosts use them to keep within band plans. But refusing 2000 too would refuse every host. Proposed: accept `2000MAX` and `2000FORCED` as "the widest the host can ask for", document that 110 then occupies 2.8 kHz, and report the true bandwidth in `CONNECTED` if the hosts' parsers allow a value outside ARDOP's list, else 2000 with the deviation documented **[OPEN]** |
+| Radio control: `RADIO*` (frequency, PTT port, filters, models) | Optional in ARDOP too; out of scope at first (a `FAULT`). Hamlib could serve it later |
+| Data port: host to modem `D:` + 2-byte length + bytes; modem to host `d:` + length + `ARQ`, `FEC`, `ERR` or `IDF` + bytes | Direct |
+
+Two cautions. First, the document is "Rev 0.2" and partly provisional; deployed modems and
+hosts may differ from it in small ways (for example whether the `C:` and `D:` prefixes are
+sent over TCP). The reference for what works is therefore what Pat's ARDOP driver (open
+source) sends and parses, read and tested against before we claim compatibility. Second,
+Winlink Express is closed: compatibility with it can only be tested, not read.
 
 ### The bandwidth fact
 
@@ -158,20 +201,31 @@ Measured on our modulator (root-raised cosine, roll-off 0.25):
 | 0.10 | 2452 Hz | 2754 Hz |
 
 110C requires an occupied bandwidth (99% of the power) of at most 3 kHz; ours is 2.65 kHz.
-Whether US amateur rules now impose a 2.8 kHz limit on HF data is **[OPEN]**. My recollection
-is that the FCC removed the symbol-rate limit and only proposed the 2.8 kHz limit, but this
-must be checked. If the limit applies, a roll-off of 0.15 meets it at the -26 dB points; a
-receiver filtering with 0.25 then loses a little, and interoperability with other 110
-modems needs checking (PLAN.md S9). An earlier note of mine, "110 fits", was wrong as
-stated: at roll-off 0.25 it does not fit 2.8 kHz.
+US amateur rules limit HF data to 2.8 kHz (confirmed by the user), so roll-off 0.25 does not
+fit; an earlier note of mine, "110 fits", was wrong. Roll-off 0.15 does (D5).
+
+What a narrower transmit pulse costs our receiver (which keeps its 0.25 filter), a first
+look: six 20-s messages per point, SNR in 3 kHz.
+
+| Mode, channel, SNR | TX 0.25 | TX 0.15 | TX 0.10 |
+|---|---:|---:|---:|
+| 2400S, noise only, 7 dB | 2.0e-4 | 2.4e-4 | 2.6e-4 |
+| 2400S, 2 paths 2 ms 1 Hz, 15 dB | 2.9e-3 | 5.4e-3 | 6.5e-3 |
+| 600S, noise only, -1 dB | 1.4e-3 | 1.4e-3 | 1.5e-3 |
+| 600S, 2 paths 2 ms 1 Hz, 4 dB | 3.1e-2 | 2.8e-2 | 3.0e-2 |
+
+No cost on noise-only channels; on fading channels the differences are within what six
+messages can resolve, except possibly 2400S. To be measured properly (more messages, and
+with the receiver's filter matched) before D5 is settled.
 
 ## 6. Open questions and facts still needed
 
-- **The ARDOP host-interface document**, or Pat's ARDOP driver read as the reference: which
-  commands and responses real clients use, and whether any assume ARDOP's bandwidths or
-  frame types.
-- **The current US rule on HF data bandwidth** (2.8 kHz or not), and the -26 dB point
-  as measured on a real transmitter (our numbers are at audio).
+- **Pat's ARDOP driver**: which commands it sends, how it parses `CONNECTED`'s bandwidth
+  and `ARQBW`, and what it does with an unknown value; the same tested (not read) for
+  Winlink Express.
+- **The -26 dB bandwidth on a real transmitter** at roll-off 0.15 (our numbers are at
+  audio), and the receiver's cost of the narrower pulse, measured properly (D5).
+- **Broadcast mode names**: our own `FECMODE` values, and what to do with ARDOP's.
 - **Keying latency and turnaround** on real radios (PTT, VOX, CAT), for leader timing
   and timeouts: the audio and keying milestone.
 - **Fade lengths** on the channels that matter (NVIS; 2 paths at 2 ms and 1 Hz; 5 ms and
@@ -186,10 +240,9 @@ stated: at roll-off 0.25 it does not fit 2.8 kHz.
 
 ## 7. Next steps
 
-1. Get the host-interface definition (the ARDOP host interface document, and Pat's driver)
-   and check it against D3 and D4.
-2. Settle the bandwidth question; if 2.8 kHz applies, measure what roll-off 0.15 costs our
-   receiver and others'.
+1. Read Pat's ARDOP driver against §5's table; settle the bandwidth report and the
+   broadcast mode names.
+2. Make the transmit roll-off a setting and measure what 0.15 costs (D5).
 3. Prototype frames and selective-repeat ARQ sessions in `tools/toystack.py` over the
    channel simulator, with B2F-sized traffic, before writing milestones.
 4. Then write the modem program's milestones in PLAN.md: audio and keying, the host
