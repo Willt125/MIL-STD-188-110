@@ -82,7 +82,7 @@ the legal way:
 
 - the callsign is the station's address and is sent in every transmission; nothing is
   transmitted without one configured;
-- no encryption, now or later;
+- no encryption in the amateur profile, ever (encryption is an `authorized`-only item, D7);
 - every protocol of ours is specified in this repository (a requirement for amateur use,
   e.g. US 97.309);
 - no automatic answering by default: a station that responds to connection requests
@@ -157,8 +157,11 @@ meaning of `2000`.
   software or its authors, must make sure their licence or authorisation covers every
   band, frequency, bandwidth, mode and kind of operation; no warranty.
 
-Receiving is not limited by either profile. One limit stays outside both: no encryption
-(D1), unless decided otherwise.
+Receiving is not limited by either profile. **Encryption (2026-10-20): `authorized` only,
+to be designed later.** Amateur rules forbid it, so the amateur profile never offers it;
+services such as MARS and SHARES may permit or require it. Nothing is designed yet: which
+layer it belongs to, which algorithms, key management, and how its absence is guaranteed in
+the amateur profile (a build without it, or a refusal at run time) are open questions.
 
 ## 5. ARDOP, checked against 110
 
@@ -311,13 +314,81 @@ had hinted at a cost at 2400S on fading, which the larger run did not bear out).
   terms. Not needed before level 2 of D2 works.
 - **Busy detection** of signals other than 110.
 
-## 7. Next steps
+## 7. Prototype: selective-repeat ARQ sessions (2026-10-20)
+
+`tools/arqsim.py` (an experiment, not the modem) holds sessions between two stations over
+one continuous simulated channel (2 paths, 2 ms, 1 Hz), every transmission through the
+modulator, the channel and the complete receiver. Its frame format is a draft (in the
+tool's docstring): each transmission carries a header (both callsigns), an acknowledgement
+(next expected offset, up to 8 received ranges beyond it, the SNR measured, the mode to send
+in) and data frames up to a 20-s cap, each with its own CRC-32 and a byte-stream offset. The
+traffic is a B2F-shaped session (handshake, proposals, two compressed messages from A, one
+from B, closing lines; 5.9 kB in all), emulated by its turns and sizes. The turnaround is
+assumed (0.5 s), not measured; four sessions per point, each on its own fading channel.
+
+**Many frames per transmission against stop-and-wait** (fixed 1200S; stop-and-wait sends one
+128-byte frame per transmission and waits for its acknowledgement, as ARDOP does):
+
+| Channel SNR | Stop-and-wait | Selective repeat |
+|---:|---:|---:|
+| 9 dB | 310 s | 100 s |
+| 15 dB | 260 s | 65 s |
+| 21 dB | 253 s | 65 s |
+
+Three to four times faster. With 110's preambles a transmission costs at least 1.8 s plus the
+turnaround, so it must carry as much as it can (D3 as proposed).
+
+**Short against long interleave** (selective repeat, 1200 bps): short 65-100 s, long
+129-141 s, at every SNR from 9 to 21 dB. Long interleave's 4.8-s preamble and 4.8-s blocks
+are paid on every transmission, and a B2F session is mostly short turns. Long interleave
+belongs to bulk transfer, if anywhere (the toystack found the same: never under 9.6 s).
+
+**Which rate delivers most, by channel SNR** (`arqsim.py goodput`: 20-s transmissions of
+200-byte frames, short interleave):
+
+| Channel SNR | Best rate | Delivered | Notes |
+|---:|---|---:|---|
+| 3 dB | 600S | 150 bps | 150S delivers every frame, 121 bps |
+| 6 dB | 600S | 408 bps | 1200S 384 bps |
+| 9 dB | 1200S | 808 bps | 2400S loses 88% of frames |
+| 12 dB | 1200S | 1030 bps | 2400S as much, but half its frames lost |
+| 15 dB and up | 2400S | 1676-2100 bps | |
+
+With retransmission, a rate pays even while it loses 20-50% of frames: the thresholds are
+6-10 dB lower than Table XVI's (which are for a bit error rate of 1e-5). 300 bps never won.
+The receiver's SNR report reads about 3 dB below the channel on the probed modes, but at
+75 bps (no probes) it saturates near 4-5 dB whatever the channel; a 75-bps station must step
+up on delivered frames, not SNR.
+
+**Fixed against adaptive rate.** The adaptive rule (`choose_arq`): the receiver proposes the
+rate in each acknowledgement, from the measured SNR and the table above; up one rung at a
+time and only after a transmission whose frames all arrived; down as far as the SNR says,
+and at least one rung when half the frames were lost; starting at 600S.
+
+| Channel SNR | Fixed 1200S | Adaptive |
+|---:|---:|---:|
+| 3 dB | 0 of 4 sessions complete | 3 of 4, 726 s |
+| 6 dB | 210 s | 214 s |
+| 9 dB | 100 s | 113 s |
+| 15 dB | 65 s | 70 s |
+| 21 dB | 65 s | 56 s |
+
+Adaptive wins where a fixed rate is wrong (3 dB, 21 dB) and costs 5-15% in between, the
+price of starting at 600S and climbing one rung at a time.
+
+**Still to measure** before the link layer is specified: frame size and the transmission
+cap (both fixed here at 200 bytes and 20 s); a harsher channel (5 ms, 5 Hz) and drifting
+conditions (`TimeVaryingChannel` schedules); a better start (a probe exchange, or the last
+rate used with the same station); lost acknowledgements and timeouts (here a transmission
+not heard still costs only its own air time); and the real turnaround, which needs radios.
+
+## 8. Next steps
 
 1. Done: Pat's ARDOP driver read (§5); D6 proposed. Its fbb package (B2F) is the next
    thing to read when B2F comes up.
 2. Done: the roll-off is a setting on both sides, 0.15 (span 16) is the default and costs
    nothing measurable (D5); wider settings need the `authorized` profile (D7).
-3. Prototype frames and selective-repeat ARQ sessions in `tools/toystack.py` over the
-   channel simulator, with B2F-sized traffic, before writing milestones.
+3. Started: `tools/arqsim.py`, selective-repeat ARQ sessions with B2F-shaped traffic (§7).
+   To finish: the measurements §7 lists as still to do.
 4. Then write the modem program's milestones in PLAN.md: audio and keying, the host
    interface, the session layer, B2F, the TUI.
