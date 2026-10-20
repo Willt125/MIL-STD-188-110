@@ -185,13 +185,19 @@ block 2, and so on. The encoder is not real-time paced, so it simply waits for i
 zero interleave, data symbols start immediately after the 0.6 s preamble.
 
 ### INT-015: Transmit pulse shape. *Unspecified, High*
-§5.3.2.3.9 says only that the I/Q waveforms "must be filtered". **Decision:** root-raised-cosine,
-α = 0.25 (default), giving 1800 ± 1500 Hz = 300–3300 Hz. The receiver does not need to know
-the transmitter's filter, because the equalizer absorbs the mismatch. Configurable.
-**Measured (M6):** span ±8 symbols; residual inter-symbol interference after matched filtering
-≤ 9×10⁻⁴; 99.997% of power within 300–3300 Hz; 1.9×10⁻⁵ beyond ±1550 Hz of the carrier;
-carrier at 1800.000000 Hz (spec: ±1 Hz). The exploratory analysis of the real recordings used
-this same filter at the receiver and decoded them cleanly (VALIDATION.md).
+§5.3.2.3.9 says only that the I/Q waveforms "must be filtered"; 110C limits the occupied
+bandwidth (99% of the power) to 3 kHz, and its Appendices C and D suggest a roll-off of 0.35.
+**Decision (revised 2026-10-20):** root-raised-cosine, α = 0.15, transmit filter span ±16
+symbols (receive filters ±8): 2.5 kHz occupied, 2.75 kHz at -26 dB, inside the US amateur
+limit of 2.8 kHz for HF data. Wider roll-offs need the `authorized` profile (`m110c.profile`,
+docs/NETWORK.md D7). The receiver's roll-off is a setting too; a mismatch costs nothing
+measurable from 0.15 to 0.35 (docs/PERFORMANCE.md, roll-off), the equaliser absorbing it.
+**Until 2026-10-20** the default was α = 0.25, span ±8 (300–3300 Hz, 3.0 kHz at -26 dB);
+the M6-M13 and S3-S5 measurements were made with it. **Measured (M6, at 0.25):** residual
+inter-symbol interference after matched filtering ≤ 9×10⁻⁴ (at 0.15 with the new spans,
+2.2×10⁻³); 99.997% of power within 300–3300 Hz; carrier at 1800.000000 Hz (spec: ±1 Hz). The
+exploratory analysis of the real recordings used the 0.25 filter at the receiver and decoded
+them cleanly (VALIDATION.md).
 
 ### INT-016: Byte to bit order at the user interface. *Unspecified, High*
 The synchronous serial interface carries bits, not bytes. **Decision:** LSB-first within each

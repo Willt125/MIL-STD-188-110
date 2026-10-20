@@ -8,9 +8,11 @@ The phasors are pulse-shaped with a root-raised-cosine filter and placed on the 
 * ``sps`` = samples per symbol = sample rate / 2400, a whole number. Other output rates
   (8000, 44100 S/s, ...) are reached by modulating at 9600 S/s and resampling exactly
   (:mod:`m110c.resample`, S3).
-* ``h``  = root-raised cosine, roll-off 0.25, spanning +/-8 symbols (INT-015). The spec only
-  says the waveforms "must be filtered" (§5.3.2.3.9 note). Roll-off 0.25 puts the signal in
-  1800 +/- 1500 Hz = 300..3300 Hz, the 3-kHz HF voice channel.
+* ``h``  = root-raised cosine, roll-off 0.15, spanning +/-16 symbols (INT-015). The spec
+  only says the waveforms "must be filtered" (§5.3.2.3.9 note). Roll-off 0.15 puts the
+  signal in 1800 +/- 1380 Hz, 2.75 kHz wide at -26 dB: inside the US amateur limit of 2.8 kHz
+  for HF data, which the earlier default, 0.25 (300..3300 Hz, 3.0 kHz), exceeds. Wider
+  roll-offs are for the ``authorized`` profile (:mod:`m110c.profile`).
 * ``f_c`` = 1800 Hz by default, so the real part of ``x`` *is* the audio waveform an SSB
   (upper sideband) transmitter would be fed. With ``carrier_hz=0`` the output is complex
   baseband centred on the carrier.
@@ -29,9 +31,14 @@ from .resample import INTERNAL_RATE, Resampler
 from .spec import tables as T
 
 BLOCK_SYMBOLS = 240  # 0.1 s; fixed so that output does not depend on input chunking
+DEFAULT_ROLLOFF = 0.15  # INT-015; the receiver's filters default to the same
+DEFAULT_SPAN = 16  # transmit filter, symbols each side: 51 Hz below 2.8 kHz at -26 dB, not 20
+# The modulator's latency, symbol start to pulse peak, whatever the filter's span: a longer
+# filter drops its earliest precursor samples (see Modulator.delay).
+LATENCY_SYMBOLS = 8
 
 
-def rrc_taps(sps: int, alpha: float = 0.25, span: int = 8) -> np.ndarray:
+def rrc_taps(sps: int, alpha: float = DEFAULT_ROLLOFF, span: int = 8) -> np.ndarray:
     """Root-raised-cosine impulse response, ``2*span*sps + 1`` taps, unit energy.
 
     Standard closed form, with the two removable singularities (t = 0 and
@@ -69,8 +76,8 @@ class Modulator:
         self,
         sample_rate: int = 9600,
         carrier_hz: float = T.CARRIER_HZ,
-        rolloff: float = 0.25,
-        span: int = 8,
+        rolloff: float = DEFAULT_ROLLOFF,
+        span: int = DEFAULT_SPAN,
         rms: float = 0.4,
     ):
         self.sample_rate = sample_rate  # of the output
@@ -88,12 +95,21 @@ class Modulator:
         self._pending = np.zeros(0, dtype=np.uint8)  # tribits awaiting a full block
         self._tail = np.zeros(self.taps.size - 1, dtype=complex)  # filter overlap
         self._samples_out = 0  # global sample index, for a continuous carrier phase
+        # Precursor samples to drop at the start of a transmission (spans beyond 8 symbols).
+        self._lead = max(0, span - LATENCY_SYMBOLS) * self.sps
+        self._skip = self._lead
 
     @property
     def delay(self) -> int:
-        """Samples (at the modulation rate) from a symbol's start to the peak of its pulse
-        (filter group delay)."""
-        return (self.taps.size - 1) // 2
+        """Samples (at the modulation rate) from a symbol's start to the peak of its pulse.
+
+        The filter's group delay, but at most LATENCY_SYMBOLS: a filter spanning more symbols
+        (DEFAULT_SPAN, 16) would otherwise make the transmitter later, and every time the
+        receiver reports (which assumes 8 symbols, as its own filters span) later with it.
+        So its output starts that much into the filtered signal: what is dropped is the
+        first pulses' precursor more than 8 symbols before their peaks, 36 dB below one
+        symbol's energy at roll-off 0.15, once per transmission (key-up does more)."""
+        return (self.taps.size - 1) // 2 - self._lead
 
     def process(self, tribits: np.ndarray) -> np.ndarray:
         """Accept tribits; return every sample that is now final."""
@@ -112,6 +128,7 @@ class Modulator:
         self._pending = np.zeros(0, dtype=np.uint8)
         out.append(self._mix(self._tail))
         self._tail = np.zeros(self.taps.size - 1, dtype=complex)
+        self._skip = self._lead  # the next transmission starts afresh
         x = self._resample(np.concatenate(out))
         if self._resampler is not None:
             x = np.concatenate([x, self._resampler.flush()])
@@ -131,6 +148,9 @@ class Modulator:
         return self._mix(shaped[: impulses.size])
 
     def _mix(self, baseband: np.ndarray) -> np.ndarray:
+        if self._skip:  # the start of a transmission (see delay)
+            cut = min(self._skip, baseband.size)
+            baseband, self._skip = baseband[cut:], self._skip - cut
         n = self._samples_out + np.arange(baseband.size)
         self._samples_out += baseband.size
         if self.carrier_hz == 0:

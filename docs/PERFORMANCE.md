@@ -749,3 +749,9 @@ the odd lost message, are in the tool's output but say nothing either way. 2400S
 fading channel leans towards the wider pulses, by about one message in twelve, which is
 inside the spread.) So the amateur limit costs nothing measurable here; how other 110
 modems receive a 0.15 signal is a question for interoperability testing (PLAN.md S9).
+
+**Defaults changed (2026-10-20).** From here on the transmitter defaults to roll-off 0.15 with
+its filter spanning 16 symbols each side, and the receiver's filters to 0.15 (INT-015;
+docs/NETWORK.md, D5 and D7). Every measurement above this section, and CONFORMANCE.md, was
+made with the earlier default, 0.25 with span 8; the comparison above says the difference
+does not matter to this receiver, but the tools now rerun at the new default.

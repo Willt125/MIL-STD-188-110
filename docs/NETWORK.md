@@ -126,13 +126,13 @@ conformance tests, which concern ARDOP's own waveform. Ours is a different wavef
 emulate the host interface only, and the documentation says "a host interface compatible
 with ARDOP's", never "ARDOP". Section 5 checks the interface; it fits.
 
-**D5 [PROPOSED] A narrower pulse for amateur use.** Part 97's 2.8 kHz limit on HF data
+**D5 [DECIDED] A narrower pulse for amateur use.** Part 97's 2.8 kHz limit on HF data
 (confirmed by the user, 2026-10-19), measured at -26 dB, is exceeded by our roll-off of 0.25
-(3.0 kHz). The roll-off is now a setting on both sides (2026-10-20); proposed: 0.15 as the
-amateur default, with the transmit filter lengthened to 16 symbols each side (2749 Hz at
-audio, a 51 Hz margin instead of 20), and wider roll-offs (0.25, 0.35) only where
-authorised. Measured: no cost to our receiver from 0.15 to 0.35, matched or not
-(docs/PERFORMANCE.md, roll-off). Still to check: the on-air spectrum (§6). Other 110 modems recommend wider pulses still
+(3.0 kHz). Since 2026-10-20 the default on both sides is 0.15, with the transmit filter
+lengthened to 16 symbols each side (2749 Hz at audio, a 51 Hz margin instead of 20); wider
+roll-offs (0.25, 0.35) need the `authorized` profile (D7). Measured: no cost to our receiver
+from 0.15 to 0.35, matched or not (docs/PERFORMANCE.md, roll-off). Still to check: the
+on-air spectrum (§6). Other 110 modems recommend wider pulses still
 (Appendices C and D of 110C suggest a roll-off of 0.35), so a third-party 110 modem may not
 be usable on US amateur HF as it stands.
 
@@ -142,6 +142,23 @@ be usable on US amateur HF as it stands.
 Pat parses `ARQBW` replies strictly and never parses `CONNECTED`'s bandwidth (§5), so this
 works with Pat; Winlink Express must be tested. Documented as a deviation from ARDOP's
 meaning of `2000`.
+
+**D7 [DECIDED] Two operating profiles** (`m110c.profile`, `--profile`), 2026-10-20:
+
+- `amateur`, the default: every setting kept within amateur limits, US rules as the
+  reference. A setting beyond them is refused, with a message naming the limit and the
+  profile that lifts it. Today it limits the transmit roll-off to 0.15 (D5); the link stack's
+  limits (identification, automatic operation, bandwidth through the host interface) will
+  join it as they are built.
+- `authorized`: every limit lifted, the full breadth of 110C's settings and of the link
+  stack. For stations whose licence or authorisation covers what they transmit (MARS,
+  SHARES, government, commercial or experimental stations, other countries' rules). Every
+  use prints a notice, even with `--quiet`: all safeties are off; the operator, not the
+  software or its authors, must make sure their licence or authorisation covers every
+  band, frequency, bandwidth, mode and kind of operation; no warranty.
+
+Receiving is not limited by either profile. One limit stays outside both: no encryption
+(D1), unless decided otherwise.
 
 ## 5. ARDOP, checked against 110
 
@@ -298,8 +315,8 @@ had hinted at a cost at 2400S on fading, which the larger run did not bear out).
 
 1. Done: Pat's ARDOP driver read (§5); D6 proposed. Its fbb package (B2F) is the next
    thing to read when B2F comes up.
-2. Done: the roll-off is a setting on both sides and 0.15 costs nothing measurable (D5).
-   Open: the defaults, and how wider settings are reserved for authorised use.
+2. Done: the roll-off is a setting on both sides, 0.15 (span 16) is the default and costs
+   nothing measurable (D5); wider settings need the `authorized` profile (D7).
 3. Prototype frames and selective-repeat ARQ sessions in `tools/toystack.py` over the
    channel simulator, with B2F-sized traffic, before writing milestones.
 4. Then write the modem program's milestones in PLAN.md: audio and keying, the host

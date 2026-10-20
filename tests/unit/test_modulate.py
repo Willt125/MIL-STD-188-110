@@ -22,7 +22,7 @@ def matched_filter_symbols(x, n_symbols, sample_rate=9600, carrier_hz=1800.0):
     n = np.arange(x.size)
     baseband = x * np.exp(-2j * np.pi * carrier_hz * n / sample_rate)
     y = np.convolve(baseband, mod.taps[::-1].conj())
-    peak = 2 * mod.delay  # transmit filter delay + matched filter delay
+    peak = mod.delay + (mod.taps.size - 1) // 2  # transmitter latency + matched filter delay
     return y[peak + mod.sps * np.arange(n_symbols)]
 
 
@@ -38,16 +38,21 @@ def test_rrc_is_unit_energy_and_symmetric(sps):
 
 
 @pytest.mark.parametrize("sps", [4, 20])
-def test_rrc_pair_is_nyquist(sps):
+@pytest.mark.parametrize(
+    "rolloff, tx_span, bound", [(0.15, 16, 5e-3), (0.15, 8, 1e-2), (0.25, 8, 2e-3)]
+)
+def test_rrc_pair_is_nyquist(sps, rolloff, tx_span, bound):
     """Transmit RRC followed by a matched RRC is a raised cosine: no inter-symbol
-    interference at the symbol instants. Measured: worst 5.4e-4 (sps 4), 8.7e-4 (sps 20),
-    the residue of truncating the filter at +/-8 symbols."""
-    h = rrc_taps(sps)
-    g = np.convolve(h, h)
+    interference at the symbol instants, but for the residue of truncating the filters
+    (the receiver's at +/-8 symbols). The smaller the roll-off, the slower the pulse decays.
+    Measured, worst: 0.15 with the transmit filter at +/-16 symbols (the defaults), 2.2e-3;
+    at +/-8, 4.3e-3; 0.25 at +/-8, 5.4e-4 (sps 4) and 8.7e-4 (sps 20). All far below the
+    noise of any usable channel (4e-3 is -47 dB)."""
+    g = np.convolve(rrc_taps(sps, rolloff, tx_span), rrc_taps(sps, rolloff))
     centre = (g.size - 1) // 2
-    at_symbols = g[centre % sps :: sps]
-    assert np.isclose(at_symbols[centre // sps], 1.0)
-    assert np.max(np.abs(np.delete(at_symbols, centre // sps))) < 2e-3
+    at_symbols = g[centre % sps :: sps] / g[centre]  # (filters of unequal length: peak < 1)
+    assert g[centre] > 0.999
+    assert np.max(np.abs(np.delete(at_symbols, centre // sps))) < bound
 
 
 def test_rrc_rejects_bad_rolloff():
@@ -163,10 +168,14 @@ def test_output_is_bit_identical_however_input_is_chunked(chunk_sizes):
 
 
 def test_output_length():
+    """The symbols plus the filter's ringing, less the precursor a filter longer than 8
+    symbols each side drops at the start (Modulator.delay)."""
     mod = Modulator()
     n = 1000
     x = modulate(np.zeros(n, np.uint8))
-    assert x.size == n * mod.sps + mod.taps.size - 1
+    assert x.size == n * mod.sps + mod.delay + (mod.taps.size - 1) // 2
+    assert mod.delay == 8 * mod.sps
+    assert modulate(np.zeros(n, np.uint8), span=8).size == n * mod.sps + 2 * 8 * mod.sps
 
 
 def test_buffering_is_bounded_by_one_block():

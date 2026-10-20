@@ -47,7 +47,7 @@ from math import lcm
 import numpy as np
 
 from .. import scrambler
-from ..modulate import rrc_taps
+from ..modulate import DEFAULT_ROLLOFF, rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec, mode, mode_from_d1_d2
 from . import demap
@@ -183,7 +183,7 @@ class LateEntrySearch:
         max_offset_hz: float = MAX_OFFSET_HZ,
         threshold: float = THRESHOLD,
         start: int = 0,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
     ):
         self.sample_rate = sample_rate
         self.sps = sample_rate // T.SYMBOL_RATE
@@ -251,7 +251,7 @@ class LateEntry:
     demodulator, finds and verifies a block boundary. :meth:`process` returns True once it
     has; then :attr:`mode`, :attr:`block_start` and :meth:`symbols_from_block` hand over."""
 
-    def __init__(self, lock: LateLock, sample_rate: int = 9600, rolloff: float = 0.25):
+    def __init__(self, lock: LateLock, sample_rate: int = 9600, rolloff: float = DEFAULT_ROLLOFF):
         self.lock = lock
         self.start_index = int(np.floor(lock.segment_start)) - 8
         self.demod = EqualizingDemodulator(

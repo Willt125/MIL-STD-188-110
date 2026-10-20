@@ -88,7 +88,7 @@ golden vectors as the C test oracle.
 | Sample type  | `cf32`: interleaved little-endian float32 I/Q (GNU Radio / SDR convention) | `cs16`, real `s16` audio, `.wav` (real audio, 1800 Hz carrier) |
 | Sample rate  | 9600 S/s (exactly 4 samples/symbol) | 48000 (20 sps); arbitrary rates via a rational resampler (later) |
 | Carrier      | +1800 Hz in the complex stream, so `Re{x}` *is* the §5.3.2.3.9 audio waveform | `--carrier 0` for symbol-centered baseband |
-| Pulse shape  | Root-raised-cosine, α = 0.25, span ±8 symbols | configurable α. The spec does not specify a filter (§5.3.2.3.9 note, INT-015). α = 0.25 occupies exactly 300–3300 Hz around 1800 Hz |
+| Pulse shape  | Root-raised-cosine, α = 0.15, transmit span ±16 symbols (α = 0.25, ±8 until 2026-10-20) | configurable α. The spec does not specify a filter (§5.3.2.3.9 note, INT-015). α = 0.15 is 2.75 kHz wide at -26 dB, inside the US amateur 2.8 kHz; wider α under the `authorized` profile |
 | Byte→bit order | LSB-first, as on a UART | `--msb-first` (the spec is silent, INT-016) |
 
 ---
@@ -457,6 +457,14 @@ Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixe
   it (a link layer's SNR report should use the decoder's estimate).
 - The delay-spread limit (clean to 7-8 ms, gone from 9 ms) is the equaliser's chosen span
   (`POSTCURSOR_TAPS`, 8.3 ms), not a defect; noted in the channel notebook.
+- **Known weakness, not fixed (found 2026-10-20):** where a transmission that stops
+  mid-message (signal lost, no EOM) is placed to have ended depends on where the cut falls.
+  1200L cut off into noise, 21 cuts between 55% and 65% of the message: 18 placed within
+  0.01 s, 3 between 0.29 and 0.64 s late, with the old and the new pulse shapes alike. The
+  end is placed where the final run of bad frames began, and one noise frame scoring as
+  signal (the per-frame fraction is noisy, about +/-0.2) restarts that run. It matters only
+  for where the next search starts. A smoothed fraction, or a run that tolerates one good
+  frame, would fix it; to be measured first.
 
 
 ### The network stack: agenda for a discussion before the modem program

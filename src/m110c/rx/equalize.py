@@ -81,7 +81,7 @@ import numpy as np
 
 from .. import scrambler, symbols
 from .._blas import single_threaded_blas
-from ..modulate import rrc_taps
+from ..modulate import DEFAULT_ROLLOFF, rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from . import demap
@@ -305,7 +305,7 @@ class EqualizingDemodulator:
         mode: ModeSpec,
         detection: Detection,
         sample_rate: int = 9600,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
         start_index: int = 0,
         precursor: int = PRECURSOR_TAPS,
         postcursor: int = POSTCURSOR_TAPS,

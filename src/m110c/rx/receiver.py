@@ -26,6 +26,7 @@ import numpy as np
 from .. import bits as bitops
 from .._blas import single_threaded_blas
 from ..framing import AsyncDecoder, AsyncFormat
+from ..modulate import DEFAULT_ROLLOFF
 from ..resample import INTERNAL_RATE, Resampler
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
@@ -80,7 +81,7 @@ class Receiver:
         voice: bool = False,
         trace: bool = False,
         late_entry: bool = False,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
     ):
         # The receiver runs at the input rate when it is a multiple of 2400 S/s; other rates
         # (8000, 44100, ...) are resampled to 9600 S/s first (S3). Sample positions in the
@@ -113,8 +114,9 @@ class Receiver:
         # rx/lateentry.py): costs about a quarter of real time in CPU while no message is
         # being received. Needs the equaliser.
         self.late_entry = late_entry and equalize
-        # The receive filter's root-raised-cosine roll-off; best matched to the
-        # transmitter's (0.15 keeps the amateur 2.8 kHz limit; docs/PERFORMANCE.md, roll-off).
+        # The receive filters' root-raised-cosine roll-off. Best matched to the
+        # transmitter's, but from 0.15 to 0.35 a mismatch cost nothing measurable
+        # (docs/PERFORMANCE.md, roll-off).
         self.rolloff = rolloff
         self._late = None  # the late-entry attempt in progress, if any
         self.messages: list[Message] = []

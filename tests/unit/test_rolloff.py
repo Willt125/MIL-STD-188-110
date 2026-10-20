@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from m110c.cli import rx_main
+from m110c.modulate import rrc_taps
 from m110c.rx.receiver import Receiver
 from m110c.spec import mode
 from m110c.tx import transmit_bytes
@@ -37,12 +38,13 @@ def test_the_receiver_takes_the_transmitters_rolloff(rolloff):
 
 def test_the_receivers_filters_follow_the_setting():
     """Acquisition, the demodulator and late entry all filter with the setting."""
-    rx = Receiver(rolloff=0.15, late_entry=True)
-    rx.process(signal(0.15)[:30000])
-    assert rx._search.waveforms.shape == Receiver()._search.waveforms.shape
-    assert not np.allclose(rx._search.waveforms, Receiver()._search.waveforms)
-    assert np.allclose(rx._demod.taps, check.Modulator(rolloff=0.15).taps)
-    assert np.allclose(rx._late_search.taps, check.Modulator(rolloff=0.15).taps)
+    rx = Receiver(rolloff=0.35, late_entry=True)
+    rx.process(signal(0.35)[:30000])
+    default = Receiver()._search.waveforms
+    assert rx._search.waveforms.shape == default.shape
+    assert not np.allclose(rx._search.waveforms, default)
+    assert np.allclose(rx._demod.taps, rrc_taps(4, 0.35))
+    assert np.allclose(rx._late_search.taps, rrc_taps(4, 0.35))
 
 
 def test_rx_cli_rolloff(tmp_path):
