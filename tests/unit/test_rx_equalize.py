@@ -314,21 +314,27 @@ def test_message_end_is_located():
     """The next search starts where the transmission really ended, not where the
     demodulator (which runs a second ahead) happens to be."""
     m = mode(2400, "short")
-    x = modulate(transmit_bytes(message(100), m))
+    tri = transmit_bytes(message(100), m)
+    x = modulate(tri)
     lead = 3000
     out, rx = receive(np.concatenate([np.zeros(lead, complex), x, np.zeros(20000, complex)]))
     assert rx.messages[0].eom_found
-    true_end = lead + x.size - (rrc_taps(4).size - 1)  # the modulator's tail is filter ringing
+    true_end = lead + tri.size * 4  # (what follows is the transmit filter's ringing)
     assert abs(rx.messages[0].end_sample - true_end) <= 2 * 4
 
 
 def test_noise_after_the_signal_is_not_decoded_and_loss_is_placed():
     """A transmission cut off mid-message: what was received is decoded, the loss is
-    declared and placed near the cut."""
+    declared and placed near the cut.
+
+    Cut at 60% of the transmitted symbols. The placement depends on where the cut falls:
+    over 21 cuts between 55% and 65%, 18 were placed within 0.01 s and 3 between 0.29 and
+    0.64 s late (a noise frame that scores as signal restarts the final run of bad frames
+    the end is placed at; PLAN.md, known weaknesses)."""
     m = mode(1200, "long")
     msg = message(1500)
     x = signal(m, msg, tail=0)
-    cut = 4000 + int(0.6 * (x.size - 4000))
+    cut = 4000 + int(0.6 * transmit_bytes(msg, m).size) * 4
     rng = np.random.default_rng(2)
     noise = 0.02 * (rng.standard_normal(3 * FS) + 1j * rng.standard_normal(3 * FS))
     y = np.concatenate([x[:cut], noise])

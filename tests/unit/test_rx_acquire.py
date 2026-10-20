@@ -36,10 +36,12 @@ def first_detection(x, **kwargs):
 
 
 def test_slot_waveforms_are_the_transmitted_slots():
-    """Slot v of any segment, as the transmitter sends it, starts the waveform library."""
+    """Slot v of any segment, as the transmitter sends it, starts the waveform library.
+    (The library's pulses span 8 symbols each side; the transmitter's default 16, which
+    changes only the far tails.)"""
     w = slot_waveforms(4)
     tri = scrambler.scramble(np.array(T.TABLE_XIII[5], np.uint8), scrambler.sync_sequence(0, 32))
-    x = modulate(tri, carrier_hz=0) / 0.8  # modulator symbol amplitude at 4 sps
+    x = modulate(tri, carrier_hz=0, span=8) / 0.8  # modulator symbol amplitude at 4 sps
     assert np.allclose(x[: w.shape[1]], w[5], atol=1e-9)
 
 

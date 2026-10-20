@@ -337,8 +337,9 @@ plt.show()
 # ## 6. Modulation (§5.3.2.3.9)
 #
 # Each tribit k is the phasor e^(jπk/4) (INT-021), shaped by a root-raised-cosine filter
-# (α = 0.25, INT-015) and moved to the 1800-Hz carrier. The output is complex baseband at
-# 9600 samples/s whose real part is the audio. The spectrum fills 300–3300 Hz.
+# (α = 0.15, INT-015) and moved to the 1800-Hz carrier. The output is complex baseband at
+# 9600 samples/s whose real part is the audio. The spectrum fills about 420–3180 Hz: 2.75 kHz
+# at -26 dB, inside the 2.8 kHz that US amateur rules allow HF data.
 
 # %%
 x = modulate(tx)

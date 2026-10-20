@@ -45,7 +45,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .. import scrambler
-from ..modulate import rrc_taps
+from ..modulate import DEFAULT_ROLLOFF, rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec, mode, mode_from_d1_d2
 
@@ -93,7 +93,7 @@ def lowpass_taps(sample_rate: int, cutoff_hz: float, transition_hz: float) -> np
     return h / h.sum()
 
 
-def slot_waveforms(sps: int, rolloff: float = 0.25) -> np.ndarray:
+def slot_waveforms(sps: int, rolloff: float = DEFAULT_ROLLOFF) -> np.ndarray:
     """The eight possible 32-symbol preamble slots as transmitted (pulse-shaped, unit-
     amplitude phasors, carrier removed). Row v starts at the first tap of the first pulse."""
     taps = rrc_taps(sps, rolloff)
@@ -117,7 +117,7 @@ class PreambleSearch:
         max_offset_hz: float = 400.0,
         bin_hz: float = 25.0,
         threshold: float = DETECTION_THRESHOLD,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
         block: int = 4096,
         zero_interleave: bool = False,
         voice: bool = False,

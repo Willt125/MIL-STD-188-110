@@ -26,6 +26,7 @@ import numpy as np
 from .. import bits as bitops
 from .._blas import single_threaded_blas
 from ..framing import AsyncDecoder, AsyncFormat
+from ..modulate import DEFAULT_ROLLOFF
 from ..resample import INTERNAL_RATE, Resampler
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
@@ -53,6 +54,9 @@ class Message:
     eom_found: bool = False
     lost: bool = False
     snr_db: float | None = None
+    # How fast the channel faded (fading bandwidth, Hz; EqualizingDemodulator.fading_hz),
+    # None if not measured (too short, or the M8 tracker).
+    fading_hz: float | None = None
     clock_ppm: float = 0.0
     end_sample: int = 0
     notes: list[str] = field(default_factory=list)
@@ -80,6 +84,7 @@ class Receiver:
         voice: bool = False,
         trace: bool = False,
         late_entry: bool = False,
+        rolloff: float = DEFAULT_ROLLOFF,
     ):
         # The receiver runs at the input rate when it is a multiple of 2400 S/s; other rates
         # (8000, 44100, ...) are resampled to 9600 S/s first (S3). Sample positions in the
@@ -112,6 +117,10 @@ class Receiver:
         # rx/lateentry.py): costs about a quarter of real time in CPU while no message is
         # being received. Needs the equaliser.
         self.late_entry = late_entry and equalize
+        # The receive filters' root-raised-cosine roll-off. Best matched to the
+        # transmitter's, but from 0.15 to 0.35 a mismatch cost nothing measurable
+        # (docs/PERFORMANCE.md, roll-off).
+        self.rolloff = rolloff
         self._late = None  # the late-entry attempt in progress, if any
         self.messages: list[Message] = []
         self._message: Message | None = None
@@ -209,6 +218,7 @@ class Receiver:
             self.max_offset_hz,
             zero_interleave=self.zero_interleave,
             voice=self.voice,
+            rolloff=self.rolloff,
             **options,
         )
         # The search counts samples from the position it starts at.
@@ -220,7 +230,11 @@ class Receiver:
         self._late = None
         if self.late_entry:
             self._late_search = LateEntrySearch(
-                self.sample_rate, self.carrier_hz, self.max_offset_hz, start=position
+                self.sample_rate,
+                self.carrier_hz,
+                self.max_offset_hz,
+                start=position,
+                rolloff=self.rolloff,
             )
 
     def _late_step(self, new: np.ndarray) -> bytes | None:
@@ -231,14 +245,18 @@ class Receiver:
             lock = self._late_search.process(new)
             if lock is None:
                 return None
-            self._late = LateEntry(lock, self.sample_rate)
+            self._late = LateEntry(lock, self.sample_rate, rolloff=self.rolloff)
             confirmed = self._late.process(self._late_search.samples_from(self._late.start_index))
         else:
             confirmed = self._late.process(new)
         if self._late.failed:  # no verified block boundary: search on from here
             self._late = None
             self._late_search = LateEntrySearch(
-                self.sample_rate, self.carrier_hz, self.max_offset_hz, start=self._samples_in
+                self.sample_rate,
+                self.carrier_hz,
+                self.max_offset_hz,
+                start=self._samples_in,
+                rolloff=self.rolloff,
             )
             return None
         return self._start_late_message() if confirmed else None
@@ -279,7 +297,12 @@ class Receiver:
         demodulator = EqualizingDemodulator if self.equalize else TrackingDemodulator
         options = {"trace": self._message.trace} if self.trace and self.equalize else {}
         self._demod = demodulator(
-            m, detection, self.sample_rate, start_index=self._demod_start, **options
+            m,
+            detection,
+            self.sample_rate,
+            rolloff=self.rolloff,
+            start_index=self._demod_start,
+            **options,
         )
         if self.interleave == "auto" and applies_to(m):
             self._decoder = InterleaveDetectingDecoder(m)
@@ -312,6 +335,7 @@ class Receiver:
         msg.eom_found = eom.found
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
         msg.clock_ppm = demod.clock_ppm
+        msg.fading_hz = getattr(demod, "fading_hz", None)
         msg.end_sample = self._message_end(demod, eom)
         if eom.found:  # measure the message only, not whatever followed it
             msg.snr_db = decoder.snr_db_before(data_phase_symbols(msg.mode, eom.payload_bits))

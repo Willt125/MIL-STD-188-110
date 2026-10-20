@@ -28,8 +28,8 @@ import sys
 
 import numpy as np
 
-from . import framing, io
-from .modulate import Modulator
+from . import framing, io, profile
+from .modulate import DEFAULT_ROLLOFF, Modulator
 from .spec import tables as T
 from .spec.modes import INTERLEAVE_SETTINGS, mode
 from .tx import Transmitter
@@ -105,7 +105,17 @@ def tx_parser() -> argparse.ArgumentParser:
         help="carrier frequency in Hz; 0 = centred baseband (default 1800)",
     )
     p.add_argument(
-        "--rolloff", type=float, default=0.25, help="root-raised-cosine roll-off (default 0.25)"
+        "--rolloff",
+        type=float,
+        help=f"root-raised-cosine roll-off (default {DEFAULT_ROLLOFF}; the amateur profile "
+        f"allows at most {profile.AMATEUR.max_rolloff}: 2.8 kHz at -26 dB)",
+    )
+    p.add_argument(
+        "--profile",
+        choices=list(profile.PROFILES),
+        default=profile.DEFAULT.name,
+        help="amateur (default): settings within amateur limits; authorized: every limit "
+        "lifted, for stations whose licence or authorisation covers it (prints a notice)",
     )
     framing_group = p.add_mutually_exclusive_group()
     framing_group.add_argument(
@@ -132,9 +142,13 @@ def tx_main(argv=None) -> int:
     except ValueError as exc:
         print(f"m110c-tx: {exc}", file=sys.stderr)
         return 2
+    chosen = profile.get(args.profile)
+    if chosen is profile.AUTHORIZED:
+        print(profile.AUTHORIZED_NOTICE, file=sys.stderr)  # always, even with --quiet
     try:
+        rolloff = profile.check_rolloff(chosen, args.rolloff)
         modulator = Modulator(
-            sample_rate=args.sample_rate, carrier_hz=args.carrier, rolloff=args.rolloff
+            sample_rate=args.sample_rate, carrier_hz=args.carrier, rolloff=rolloff
         )
     except ValueError as exc:
         print(f"m110c-tx: {exc}", file=sys.stderr)
@@ -245,6 +259,13 @@ def rx_parser() -> argparse.ArgumentParser:
         "next interleaver block (S5; long interleave: up to about 10 s; more CPU while idle)",
     )
     p.add_argument(
+        "--rolloff",
+        type=float,
+        default=DEFAULT_ROLLOFF,
+        help="receive filter roll-off; the transmitter's is best, but a mismatch costs "
+        f"little (default {DEFAULT_ROLLOFF})",
+    )
+    p.add_argument(
         "--invert-spectrum",
         action="store_true",
         help="input is lower sideband (spectrum inverted, INT-021)",
@@ -294,6 +315,8 @@ def _describe(msg, sample_rate) -> str:
     else:
         end = "input ended, no EOM"
     snr = "n/a" if msg.snr_db is None else f"{msg.snr_db:.1f} dB"
+    if msg.fading_hz is not None:
+        snr += f", fading {msg.fading_hz:.1f} Hz"
     return (
         f"m110c-rx: {msg.mode} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
@@ -333,6 +356,7 @@ def rx_main(argv=None) -> int:
                 equalize=args.equalize,
                 voice=args.voice,
                 late_entry=args.late_entry,
+                rolloff=args.rolloff,
             )
         except ValueError as exc:  # a sample rate too low for the signal
             print(f"m110c-rx: {exc}", file=sys.stderr)

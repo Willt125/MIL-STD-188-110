@@ -81,7 +81,7 @@ import numpy as np
 
 from .. import scrambler, symbols
 from .._blas import single_threaded_blas
-from ..modulate import rrc_taps
+from ..modulate import DEFAULT_ROLLOFF, rrc_taps
 from ..spec import tables as T
 from ..spec.modes import ModeSpec
 from . import demap
@@ -122,6 +122,12 @@ PERIOD_GAIN_75 = 0.1
 # 75 bps, data phase: a realignment must land where the set-correlation profile (which does
 # not depend on decisions) sees a path, within this many dB of its strongest.
 SET_CONFIRM_DB = 6.0
+# Fading rate (EqualizingDemodulator.fading_hz): the channel estimates' change over this lag,
+# less their change between neighbouring units (estimation noise), gives the fading
+# bandwidth; it is reported only from this many pairs of estimates.
+FADING_LAG_S = 0.1
+FADING_MIN_PAIRS = 20
+FADING_MIN_SHARE = 0.5  # units counted: the signal at least half the power (SNR >= 0 dB)
 LOSS_SNR_DB = -6.0  # as a power share, 0.2, averaged over LOSS_SECONDS; noise alone gives ~0
 
 
@@ -305,7 +311,7 @@ class EqualizingDemodulator:
         mode: ModeSpec,
         detection: Detection,
         sample_rate: int = 9600,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
         start_index: int = 0,
         precursor: int = PRECURSOR_TAPS,
         postcursor: int = POSTCURSOR_TAPS,
@@ -382,6 +388,9 @@ class EqualizingDemodulator:
         self.set_profile = None  # 75 bps: set-correlation energy over the wide span
         self.probe_profile = None  # data phase: probe-correlation PDP over the wide span
         self._estimates = deque(maxlen=2)  # (centre symbol, h, noise variance)
+        # Fading rate: recent estimates, and the sums of change (lag, neighbour) and power.
+        self._recent: deque = deque()  # (centre symbol, h)
+        self._fading = np.zeros(5)  # lag change, lag power, near change, near power, pairs
         self._peak_reference = None  # where the strongest path's peak should be (taps)
         self._clock = LineFit()  # (symbol, arrival time) for the clock-offset estimate
         self._last_peak = 0.0
@@ -639,6 +648,8 @@ class EqualizingDemodulator:
             if learn:
                 self._track(h, centre)
             self._estimates.append((centre, h, max(noise, 1e-12 * signal)))
+            if self.in_data_phase and self._fit_fraction >= FADING_MIN_SHARE:
+                self._note_fading(centre, h)  # (signal only: not the noise after the end)
         self._next_symbol = k1
         output = None
         fraction = self._fit_fraction
@@ -796,6 +807,49 @@ class EqualizingDemodulator:
         if self.probe_profile is not None:
             self.probe_profile = _shift(self.probe_profile, edge)
         self._estimates = deque(((c, _shift(h, edge), n) for c, h, n in self._estimates), maxlen=2)
+        self._recent.clear()  # (the taps moved: older estimates no longer line up)
+
+    # -- fading rate -------------------------------------------------------------------
+
+    def _note_fading(self, centre: float, h: np.ndarray) -> None:
+        """Accumulate how much the channel estimate changes over FADING_LAG_S and between
+        neighbouring units, relative to its power."""
+        lag = FADING_LAG_S * T.SYMBOL_RATE
+        if self._recent:
+            c_prev, h_prev = self._recent[-1]
+            self._fading[2] += np.sum(np.abs(h - h_prev) ** 2)
+            self._fading[3] += (np.sum(np.abs(h) ** 2) + np.sum(np.abs(h_prev) ** 2)) / 2
+            c_old, h_old = min(self._recent, key=lambda e: abs(centre - e[0] - lag))
+            if abs(centre - c_old - lag) < 0.25 * lag:
+                self._fading[0] += np.sum(np.abs(h - h_old) ** 2)
+                self._fading[1] += (np.sum(np.abs(h) ** 2) + np.sum(np.abs(h_old) ** 2)) / 2
+                self._fading[4] += 1
+        self._recent.append((centre, h.copy()))
+        while self._recent and self._recent[0][0] < centre - 1.5 * lag:
+            self._recent.popleft()
+
+    @property
+    def fading_hz(self) -> float | None:
+        """How fast the channel fades: an estimate of the fading bandwidth (two sigma of a
+        Gaussian Doppler spectrum, as Appendix E specifies it, INT-027), from the data
+        phase so far; None before FADING_MIN_PAIRS estimates FADING_LAG_S apart.
+
+        For a channel tap with that spectrum, the correlation over a lag t is
+        rho = exp(-2 pi^2 s^2 t^2) (s = sigma), and the mean squared change of an estimate
+        over t, relative to its power, is 2 (1 - rho) plus twice the estimation noise. The
+        change between neighbouring units (16-40 ms apart) is almost all noise for the fading
+        rates of HF, so subtracting it leaves the fading part. Saturates near 8 Hz in theory
+        (rho -> 0 at a 0.1-s lag), 6-7 Hz measured; not a precise measurement (noisy below
+        about 0.5 Hz), but enough to tell slow fading from fast."""
+        change, power, near, near_power, pairs = self._fading
+        if pairs < FADING_MIN_PAIRS or power <= 0 or near_power <= 0:
+            return None
+        d = max(change / power - near / near_power, 0.0)
+        rho = min(max(1.0 - d / 2, 1e-3), 1.0)
+        if rho >= 1.0:
+            return 0.0
+        sigma = np.sqrt(-np.log(rho) / (2 * np.pi**2 * FADING_LAG_S**2))
+        return float(2 * sigma)
 
     def _h_at(self, k: float) -> np.ndarray:
         (c0, h0, _), (c1, h1, _) = self._estimates

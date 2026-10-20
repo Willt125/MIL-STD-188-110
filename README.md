@@ -60,8 +60,9 @@ is the audio for an upper-sideband transmitter. Options: `--rate` 75–4800, `--
 zero/short/long, `--format` cf32/cs16/s16/wav, `--sample-rate` (any rate above 6800, e.g.
 8000, 44100 or 48000: multiples of 2400 natively, others resampled exactly from 9600),
 `--carrier`, `--async 8N1` (start/stop framing, Appendix A send-all mode), `--msb-first`,
-`--voice` (2400 bps digital voice: the input is a vocoder's bit stream, see below).
-`m110c-tx --help` lists them all.
+`--voice` (2400 bps digital voice: the input is a vocoder's bit stream, see below),
+`--rolloff` (pulse shape, default 0.15) and `--profile` (amateur or authorized: see "On the
+air" below). `m110c-tx --help` lists them all.
 
 ## Receiving
 
@@ -93,6 +94,7 @@ rest of the message (about 1.5 s of signal to join with zero or short interleave
 with long; docs/PERFORMANCE.md, S5). At 300, 150 and 75 bps with zero or short interleave
 a block is not a whole number of bytes, so use `--async` there.
 Options: `--async`/`--msb-first` (must match the sender), `--interleave`, `--late-entry`,
+`--rolloff` (the transmitter's filter; see the amateur bandwidth note in docs/NETWORK.md, D5),
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (any rate above 6800;
 WAV: from the header; rates that are not multiples of 2400 are resampled to 9600 first, for
 about 5% more CPU), `--no-equalizer` (the simpler
@@ -103,6 +105,19 @@ bit stream (SPEC_NOTES INT-019, measured on a real recording). The receiver igno
 given `--voice`, and then writes the raw bits, never async-deframed. No vocoder is included:
 §5.3.1.2 calls for STANAG 4198 (LPC-10e) or STANAG 4591 (MELPe), which an external program
 must supply (see docs/PLAN.md, non-goals, for why).
+
+## On the air
+
+This software makes signals for a radio transmitter. You need a licence to transmit, and
+meeting the rules of your jurisdiction is your responsibility, not the authors' (the
+software is provided "as is", without warranty: see LICENSE). The default **amateur
+profile** keeps settings within amateur limits, taking the US rules as the reference: the
+transmit pulse (roll-off 0.15) is 2.75 kHz wide at -26 dB, inside the 2.8 kHz allowed HF data,
+and a wider setting is refused. `m110c-tx --profile authorized` lifts every such limit, for
+stations whose licence or authorisation covers it (MARS, SHARES, government or experimental
+stations, other countries' rules), and says so each time: all safeties are off, and what is
+transmitted is the operator's responsibility. The planned link stack, its rules and why
+(no encryption, identification, automatic operation) are in docs/NETWORK.md.
 
 ## Simulating an HF channel
 

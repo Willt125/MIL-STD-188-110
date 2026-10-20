@@ -22,7 +22,7 @@ that starts at sample 0, it is twice the filter delay.
 
 import numpy as np
 
-from ..modulate import rrc_taps
+from ..modulate import DEFAULT_ROLLOFF, rrc_taps
 from ..spec import tables as T
 
 
@@ -34,7 +34,7 @@ class SymbolSampler:
         sample_rate: int = 9600,
         carrier_hz: float = T.CARRIER_HZ,
         first_symbol: int | None = None,
-        rolloff: float = 0.25,
+        rolloff: float = DEFAULT_ROLLOFF,
         span: int = 8,
     ):
         if sample_rate % T.SYMBOL_RATE:
