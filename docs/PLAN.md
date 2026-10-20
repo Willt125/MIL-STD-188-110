@@ -541,16 +541,13 @@ user, never fetched by the test suite.
 | **P7** | TUI | `m110c-tui`, a front end to `m110c-modem` (or its own station): a text waterfall, the receive log with each message's diagnostics, session state and queues, busy and PTT indicators, the profile always visible (the `authorized` notice in a banner, D7), keyboard-to-keyboard chat (over an ARQ session or broadcast), sending a file, settings | The model behind the screen tested without a terminal; screens tested headless (snapshots); every action reachable without a mouse; no state the modem does not also report through its own interfaces |
 | **P8** | More interfaces and clients | The rest of S8, in this order unless a use asks otherwise: broadcast for bulletins (D3; FEC with repeats, `FEC` and `ERR` data); KISS over TCP and a pipe; the Appendix A LAN interface (110C's own, data and remote control); file transfer | Per interface, as P6: a replayed exchange, then a host over the virtual air |
 
-**Decisions to take before P1 [PROPOSED, for the user]:**
+**Decisions (2026-10-20):**
 
-- *TUI library:* Textual (MIT, Windows included, headless testing built in) or curses
-  (standard library, no Windows, nothing to install). Proposed: Textual, as the `tui`
-  extra.
-- *B2F of our own:* not needed for Winlink. Pat implements B2F and drives the modem
-  through P6, which covers D2's levels 1 and 2. That peer-to-peer mode (Pat's `connect`
-  and `listen` over ARDOP) is to be confirmed in Pat's code when P6 starts. Our own B2F
-  client would only let the TUI send mail without Pat. Proposed: not planned until a use
-  asks for it.
+- **[DECIDED]** *TUI library: Textual* (MIT, Windows included, headless testing built in),
+  as the `tui` extra. Curses was the alternative (standard library, but no Windows).
+- **[DECIDED]** *No B2F of our own until a use needs it.* Pat implements B2F and drives the
+  modem through P6, which covers D2's levels 1 and 2. That peer-to-peer mode (Pat's
+  `connect` and `listen` over ARDOP) is to be confirmed in Pat's code when P6 starts.
 - *The carrier at 1800 Hz or 1500 Hz* (NETWORK.md §5, [OPEN]): needed by P6, decidable
   once P3 has measured the passband of a real transmitter.
 
