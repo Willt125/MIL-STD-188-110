@@ -13,6 +13,8 @@ Usage:
     python tools/arqsim.py compare                       # designs x SNRs x seeds (minutes)
     python tools/arqsim.py compare --designs sr-short sr-long --snrs 9 15 --seeds 4
     python tools/arqsim.py goodput                       # frames delivered per mode and SNR
+    python tools/arqsim.py sweep --param frame_bytes --snrs 6 12 18
+    python tools/arqsim.py sweep --param cap_s --traffic b2f bulk --snrs 6 18
 
 THE FRAME FORMAT IS A DRAFT FOR EXPERIMENTS (NETWORK.md D3; nothing is decided):
 
@@ -41,7 +43,8 @@ import struct
 import sys
 import time
 import zlib
-from dataclasses import dataclass, field
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -294,6 +297,10 @@ class Design:
     name: str
     frame_bytes: int = 200  # data bytes per DATA frame
     cap_s: float = 20.0  # longest transmission
+    # Longest transmission while the rate is still changing (None: always cap_s). A long
+    # transmission spreads each turn's fixed cost over more data, but the adaptive rate
+    # climbs one rung per transmission, so long ones make it climb slowly.
+    settle_cap_s: float | None = None
     max_frames: int | None = None  # DATA frames per transmission (None: as many as fit)
     interleave: str = "short"
     rate: int | None = 1200  # fixed data rate, or None: adapt from the peer's reports
@@ -348,6 +355,15 @@ def b2f_turns(seed: int = 0) -> list:
     ]
 
 
+def bulk_turns(seed: int = 0, size: int = 12_000) -> list:
+    """One file one way (a large attachment or a bulletin), then a short reply."""
+    rng = np.random.default_rng(seed)
+    return [("A", rng.integers(0, 256, size, dtype=np.uint8).tobytes()), ("B", b"thanks")]
+
+
+TRAFFIC = {"b2f": b2f_turns, "bulk": bulk_turns}
+
+
 # --- the radio ---------------------------------------------------------------------------
 
 
@@ -362,6 +378,7 @@ class Station:
     last_rate: int | None = None  # the rate of that transmission
     last_delivered: float | None = None  # share of its DATA frames that arrived
     asked: object = None  # the data mode this station last asked its peer for
+    settled: bool = False  # the peer's last two requests named the same rate
 
 
 class Link:
@@ -408,7 +425,10 @@ class Link:
             frame("ACK", self.sid, ack.pack()),
         ]
         m = s.data_mode
-        room = capacity(m, self.d.cap_s) - sum(len(f) for f in control)
+        cap = self.d.cap_s
+        if self.d.settle_cap_s is not None and not s.settled:
+            cap = min(cap, self.d.settle_cap_s)
+        room = capacity(m, cap) - sum(len(f) for f in control)
         pieces = s.out.pieces(room, self.d.frame_bytes)
         if self.d.max_frames is not None:
             pieces = pieces[: self.d.max_frames]
@@ -433,7 +453,9 @@ class Link:
             if kind == "ACK":
                 a = Ack.unpack(payload)
                 p.out.on_ack(a)
-                p.data_mode = mode(a.rate, a.interleave)
+                new = mode(a.rate, a.interleave)
+                p.settled = new == p.data_mode  # the peer asked for the same rate again
+                p.data_mode = new
             elif kind == "DATA":
                 p.inc.on_data(struct.unpack(">I", payload[:4])[0], payload[4:])
                 n_data += 1
@@ -543,6 +565,30 @@ def goodput_report(results) -> None:
         print(f"{snr:3.0f}  {name:5s} | {got:3d}/{n:3d} {got / n:5.0%} | {bps:6.0f} | {med}")
 
 
+def sweep_job(args):
+    """One session of the adaptive design with one parameter changed."""
+    param, value, traffic, snr, seed, extra = args
+    design = replace(DESIGNS["sr-adapt"], **dict(extra), **{param: value})
+    link = Link(design, snr, seed)
+    return args, link.run(TRAFFIC[traffic](seed), max_transmissions=150)
+
+
+def sweep_report(results) -> None:
+    rows = {}
+    for (param, value, traffic, snr, _, _), r in results:
+        rows.setdefault((traffic, snr, param, value), []).append(r)
+    print("traffic  SNR | parameter        | done | session (s), median [range] | bps")
+    for (traffic, snr, param, value), v in sorted(rows.items()):
+        ok = [r for r in v if r["ok"]]
+        secs = sorted(r["seconds"] for r in ok)
+        span = f"{np.median(secs):6.1f} [{secs[0]:.0f}-{secs[-1]:.0f}]" if secs else "     -"
+        bps = np.median([r["bps"] for r in v])
+        print(
+            f"{traffic:6s} {snr:4.0f} | {param} = {value:<6g} | {len(ok):2d}/{len(v)} | "
+            f"{span:20s} | {bps:5.0f}"
+        )
+
+
 def compare_job(args):
     name, snr, seed = args
     link = Link(DESIGNS[name], snr, seed)
@@ -567,7 +613,20 @@ def compare_report(results) -> None:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("experiment", choices=("session", "compare", "goodput"))
+    p.add_argument("experiment", choices=("session", "compare", "goodput", "sweep"))
+    p.add_argument(
+        "--param", choices=("frame_bytes", "cap_s", "settle_cap_s"), default="frame_bytes"
+    )
+    p.add_argument(
+        "--set",
+        nargs=2,
+        action="append",
+        default=[],
+        metavar=("PARAM", "VALUE"),
+        help="also change another parameter of the design, e.g. --set cap_s 40",
+    )
+    p.add_argument("--values", nargs="+", type=float)
+    p.add_argument("--traffic", nargs="+", choices=list(TRAFFIC), default=["b2f"])
     p.add_argument("--design", default="sr-adapt", choices=list(DESIGNS))
     p.add_argument("--designs", nargs="+", default=list(DESIGNS), choices=list(DESIGNS))
     p.add_argument("--snr", type=float, default=15.0)
@@ -577,8 +636,6 @@ def main(argv=None) -> int:
     p.add_argument("--jobs", type=int, default=os.cpu_count())
     args = p.parse_args(argv)
     started = time.time()
-    from concurrent.futures import ProcessPoolExecutor
-
     if args.experiment == "session":
         session_report(DESIGNS[args.design], args.snr, args.seed)
     elif args.experiment == "goodput":
@@ -590,6 +647,25 @@ def main(argv=None) -> int:
         ]
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             goodput_report(list(pool.map(goodput_job, jobs, chunksize=1)))
+    elif args.experiment == "sweep":
+        default = {
+            "frame_bytes": [64, 128, 200, 400, 800],
+            "cap_s": [5, 10, 20, 40],
+            "settle_cap_s": [10],
+        }[args.param]
+        values = args.values or default
+        if args.param == "frame_bytes":
+            values = [int(v) for v in values]
+        extra = tuple((name, float(v)) for name, v in args.set)
+        jobs = [
+            (args.param, v, t, s, k + 1, extra)
+            for v in values
+            for t in args.traffic
+            for s in args.snrs
+            for k in range(args.seeds)
+        ]
+        with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+            sweep_report(list(pool.map(sweep_job, jobs, chunksize=1)))
     else:
         jobs = [(d, s, k + 1) for d in args.designs for s in args.snrs for k in range(args.seeds)]
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:

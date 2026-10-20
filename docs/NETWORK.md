@@ -376,8 +376,47 @@ and at least one rung when half the frames were lost; starting at 600S.
 Adaptive wins where a fixed rate is wrong (3 dB, 21 dB) and costs 5-15% in between, the
 price of starting at 600S and climbing one rung at a time.
 
-**Still to measure** before the link layer is specified: frame size and the transmission
-cap (both fixed here at 200 bytes and 20 s); a harsher channel (5 ms, 5 Hz) and drifting
+**Frame size** (`arqsim.py sweep --param frame_bytes`, adaptive rate, 20-s cap, B2F session):
+
+| Channel SNR | 64 B | 128 B | 200 B | 400 B | 800 B |
+|---:|---:|---:|---:|---:|---:|
+| 6 dB | 185 s | 190 s | 214 s | 168 s | 315 s |
+| 12 dB | 76 s | 88 s | 77 s | 76 s | 86 s |
+| 18 dB | 68 s | 59 s | 63 s | 69 s | 64 s |
+
+From 64 to 400 bytes the session times agree within the spread of four channels (individual
+sessions range over 20-50% at each point); 800 bytes is clearly worse at 6 dB, where a
+frame that size rarely survives a fade. Smaller frames lose less per error but pay 14 bytes
+of overhead each (22% at 64 bytes), and the two balance. 200 bytes stays; anything from 128
+to 400 would do.
+
+**The transmission cap** (`sweep --param cap_s`; the B2F session and a one-way 12 kB
+transfer; the cap's two other settings with `settle_cap_s`):
+
+| Traffic, channel SNR | 5 s | 10 s | 20 s | 40 s | 10 s, then 40 s once settled |
+|---|---:|---:|---:|---:|---:|
+| B2F, 6 dB | 359 s | 229 s | 214 s | 235 s | 236 s |
+| B2F, 18 dB | 68 s | 65 s | 63 s | 60 s | 65 s |
+| 12 kB, 6 dB | none of 4 | 470 s | 359 s | 267 s | 321 s |
+| 12 kB, 18 dB | 124 s | 81 s | 92 s | 107 s | 75 s |
+
+5 s is too short everywhere: a transmission's fixed cost (preamble, acknowledgement, turnaround
+and the reply, about 5 s in all) is then most of it. For B2F the cap hardly matters from 10 s
+up, because its turns are small. For bulk data it pulls two ways: on a poor channel the rate
+stays low and longer transmissions spread the fixed cost over more data (40 s best); on a
+good one the adaptive rate climbs one rung per transmission, so long transmissions make it
+climb slowly (10 s best). A cap that is 10 s until the peer has asked for the same rate twice
+running and 40 s after (`settle_cap_s`) is fastest on the good channel and two thirds of the
+way to the best on the poor one.
+
+Throughput is not the only measure of the cap. On a shared amateur frequency a transmission
+cannot be interrupted: at 40 s a station wanting to break in (or in trouble) waits far longer
+than with ARDOP or VARA, whose frames last a few seconds. So the longest cap is a courtesy
+and safety question as well; proposed: 10 s until settled, at most 30 s after, and a way for
+the receiving station to ask for shorter transmissions (to be designed with the session
+layer).
+
+**Still to measure** before the link layer is specified: a harsher channel (5 ms, 5 Hz) and drifting
 conditions (`TimeVaryingChannel` schedules); a better start (a probe exchange, or the last
 rate used with the same station); lost acknowledgements and timeouts (here a transmission
 not heard still costs only its own air time); and the real turnaround, which needs radios.

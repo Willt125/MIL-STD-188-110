@@ -95,3 +95,16 @@ def test_arq_rate_choice():
     assert arq.choose_arq(12.0, 1200, 0.4, 1200) == 600  # heavy losses: down a rung
     assert arq.choose_arq(4.0, 75, 1.0, 75) == 150  # 75-bps SNR ignored; clean: up a rung
     assert arq.choose_arq(4.0, 75, 0.5, 75) == 75
+
+
+def test_the_cap_is_short_until_the_rate_settles():
+    """With settle_cap_s, transmissions are capped shorter until the peer has asked for the
+    same rate twice running."""
+    design = arq.replace(arq.DESIGNS["sr-short"], cap_s=40.0, settle_cap_s=10.0)
+    link = arq.Link(design, snr_db=25.0, seed=1)
+    link.a.out.write(bytes(20_000))
+    link.transmit(link.a)  # not settled yet: at most 10 s
+    assert link.log[-1]["seconds"] <= 10.0
+    link.a.settled = True
+    link.transmit(link.a)
+    assert 30.0 < link.log[-1]["seconds"] <= 40.0
