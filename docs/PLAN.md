@@ -492,8 +492,8 @@ a milestone says so. Nothing here is STANAG 5066 (§6, S8).
   (0.1-0.4 s of one core per second of signal, M12) runs in a worker thread so the loop
   never waits on it. The existing CLIs stay as they are: filters for files and pipes.
 - *Every device behind an interface, with a fake for tests:* audio (sound card, file or
-  pipe, virtual air), keying (none or VOX, serial RTS/DTR, Hamlib's `rigctld` over TCP, the
-  host's `PTT` lines), the clock (real, or virtual for tests that run faster than real time
+  pipe, virtual air, SDR), keying (none or VOX, serial RTS/DTR, a CM108 sound card's GPIO
+  pin, Hamlib's `rigctld` over TCP, the host's `PTT` lines, an SDR's transmitter), the clock (real, or virtual for tests that run faster than real time
   and repeat exactly).
 - *New packages:*
   - `m110c/station/`: event loop, configuration, the transmit queue;
@@ -506,6 +506,9 @@ a milestone says so. Nothing here is STANAG 5066 (§6, S8).
 - *Dependencies stay optional extras;* the core stays NumPy only:
   - `audio`: `sounddevice`, MIT, over PortAudio, MIT;
   - `keying`: `pyserial`, BSD;
+  - `sdr`: SoapySDR's Python bindings (Boost licence), with its LimeSDR and RTL-SDR modules.
+    Usually installed from the operating system's packages rather than pip, so the
+    documentation says how, per platform;
   - `tui`: the TUI library, below.
 
   Hamlib is reached only through its daemon's documented TCP protocol, never linked or
@@ -526,13 +529,14 @@ Hardware is checked by hand, by the user, against an acceptance list kept in a n
 - the date.
 
 As with the recordings (`M110C_RECORDINGS`), tests that need something we cannot ship are
-opt-in through an environment variable: a Pat binary (`M110C_PAT`), or a sound card with a
-loopback cable (`M110C_AUDIO_LOOPBACK`). Third-party programs are installed and run by the
+opt-in through an environment variable: a Pat binary (`M110C_PAT`), a sound card with a
+loopback cable (`M110C_AUDIO_LOOPBACK`), or two SDRs joined by coax and attenuators
+(`M110C_SDR_LOOP`). The benches themselves are described in `docs/ONAIR.md`. Third-party programs are installed and run by the
 user, never fetched by the test suite.
 
 | # | Milestone | Deliverable | Key tests |
 |---|-----------|-------------|-----------|
-| **P1** | Real-time core and audio | `m110c-modem` receiving continuously from a sound card and transmitting what is queued (a file, a line typed, a pipe), with live diagnostics: per message the mode, SNR, fading rate, clock and carrier offsets; input level, clipping, under- and overruns. Any card rate through the S3 resampler (48 kS/s typical). Two candidates from M12, now needed: `--tx-ppm` (sound cards are often tens of ppm off; 110C allows ±10 ppm, §4.2.1) and a drive-level setting | Same bytes and diagnostics as `m110c-rx` on the same samples, whatever the buffer sizes (the chunk-invariance tests, now through the event loop and a virtual clock); dropped and repeated buffers injected, the effect measured and documented; processing time per second of signal for every mode (a CI budget, skipped on slow runners); clean shutdown with nothing left keyed or queued. Manual: two sound cards and a cable, every mode both ways (`M110C_AUDIO_LOOPBACK`) |
+| **P1** | Real-time core and audio | `m110c-modem` receiving continuously from a sound card and transmitting what is queued (a file, a line typed, a pipe), with live diagnostics: per message the mode, SNR, fading rate, clock and carrier offsets; input level, clipping, under- and overruns. Any card rate through the S3 resampler (48 kS/s typical). Two candidates from M12, now needed: `--tx-ppm` (sound cards are often tens of ppm off; 110C allows ±10 ppm, §4.2.1) and a drive-level setting. **The SDR device** (added 2026-10-20): the modem drives an SDR as its radio through SoapySDR, as an upper-sideband transceiver in software. The modulator's analytic signal (carrier 1800 Hz) is moved up to the dial frequency and sent at the SDR's rate. Received samples are moved down, low-passed to the audio band and decimated (stages, then the S3 resampler) to the receiver's rate. Transmit and receive gains, a frequency correction in ppm, keying by enabling the transmitter, and receive-only use for recordings. Amateur profile **[PROPOSED]**: an SDR transmits by default only as a bench device, at a capped low output for cabled loops; lifting the cap needs a setting stating that a filter (and any amplifier) follows it, and prints a notice that harmonics and spurious emissions must meet the rules, since an SDR has no output filter of its own | Same bytes and diagnostics as `m110c-rx` on the same samples, whatever the buffer sizes (the chunk-invariance tests, now through the event loop and a virtual clock); dropped and repeated buffers injected, the effect measured and documented; processing time per second of signal for every mode (a CI budget, skipped on slow runners); clean shutdown with nothing left keyed or queued. Manual: two sound cards and a cable, every mode both ways (`M110C_AUDIO_LOOPBACK`). SDR device: up- and down-conversion against `m110c-chan`'s output (the same bytes through a fake SDR at its own rate), the gain cap and keying, a receive-only device refusing to transmit; manual, the LimeSDR into an RTL-SDR through attenuators, every mode, with the RTL-SDR's own clock error corrected (`M110C_SDR_LOOP`; ONAIR.md, bench D) |
 | **P2** | Virtual air | `m110c-air`: a server that several `m110c-modem` processes connect to as their sound card. A Watterson channel (Appendix E, `TimeVaryingChannel`) and an SNR per pair of stations, signals summed at each receiver, half duplex enforced through each station's keying state. Real time, for running real hosts against it; or on a shared virtual clock, faster than real time and exactly repeatable, for tests | Two stations pass every mode with the results of `m110c-chan` (same channel, same seed); two transmitters overlapping at one receiver damage each other as their power ratio says; a keyed station hears nothing; a pair set to -inf dB never hears each other (hidden stations). This is netsim's model made real, so its numbers are rechecked here at a few points (NETWORK.md §7) |
 | **P3** | Keying and on-air timing | `m110c/keying/`: VOX (no keying line), serial RTS/DTR, `rigctld`, and host-keyed (`PTT TRUE\|FALSE` to the host, for P6). Lead and tail times. A transmit watchdog: the radio is unkeyed after a hard maximum (45 s against the 30-s cap) or if the audio stops, whatever the program is doing. `tools/turnaround.py`, which measures keying latency and turnaround with a second receiver | Fakes for a serial port and a `rigctld` server: the order and timing of key, audio and unkey on the virtual clock; the watchdog fires; a device that disappears leaves the radio unkeyed. VOX clips the start of the preamble, so how much of a short preamble may be lost: acquisition measured with the first 0-400 ms removed, on the Table XVI channels. Manual: latency and turnaround of each method on the user's radios, recorded in ONAIR.md; this settles NETWORK.md §6's keying question and arqsim's assumed 0.5 s |
 | **P4** | Busy detector | `rx/busy.py`: occupancy of the passband against a tracked noise floor, joined with the 110 detectors (preamble search, the late-entry probe search) for 110 signals; busy and clear with the quiet period of NETWORK.md §7 (4 s with the measured timings) and a random back-off | False alarms on noise (hours of it, simulated) below a stated rate; detection probability against SNR for 110 and for other signals synthesised as stand-ins (a carrier, FSK, a multi-tone OFDM-like signal, speech-shaped noise bursts); the quiet-period logic on the virtual clock; netsim rerun with the measured detection curve in place of its assumed thresholds. Manual: recordings of real band noise and other modes (the user's), to check the stand-ins |
@@ -563,7 +567,7 @@ user, never fetched by the test suite.
 - **The TUI late:** the modem must be usable from Pat, scripts and the command line first.
   A screen over an unsettled core would be rewritten.
 
-**Hardware acceptance (manual, the user's; recorded in docs/ONAIR.md):**
+**Hardware acceptance (manual, the user's; benches and results in docs/ONAIR.md):**
 - P1: audio through two sound cards and a cable.
 - P3: keying latency and turnaround per method and radio.
 - P3: the transmitted spectrum at -26 dB at roll-off 0.15 on a real transmitter (D5;
