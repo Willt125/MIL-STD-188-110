@@ -416,10 +416,64 @@ and safety question as well; proposed: 10 s until settled, at most 30 s after, a
 the receiving station to ask for shorter transmissions (to be designed with the session
 layer).
 
-**Still to measure** before the link layer is specified: a harsher channel (5 ms, 5 Hz) and drifting
-conditions (`TimeVaryingChannel` schedules); a better start (a probe exchange, or the last
-rate used with the same station); lost acknowledgements and timeouts (here a transmission
-not heard still costs only its own air time); and the real turnaround, which needs radios.
+**The harsh channel** (2 paths, 5 ms, 5 Hz: a fade every few tenths of a second;
+`goodput --channel harsh`):
+
+| Channel SNR | Best rate | Delivered | Notes |
+|---:|---|---:|---|
+| 0 dB | 150S | 61 bps | |
+| 3 dB | 300S | 190 bps | the only point where 300 bps wins |
+| 6 dB | 600S | 494 bps | 1200S delivers 25% of its frames |
+| 9 dB and up | 1200S | 868-1050 bps | |
+
+2400S does not work on this channel: at most 57% of frames even at 24 dB. And the SNR the
+receiver reports reads 6-10 dB below the channel instead of 3 (fast fading puts the
+equaliser's tracking error into what it counts as noise); on 2400S it saturates near 5-6 dB.
+A rule calibrated on the moderate channel therefore keeps proposing 2400S on the harsh one
+when the SNR is high, loses half the frames, steps down and tries again.
+
+Two changes to the adaptive rule, from what this showed (`arqsim.py`, design `sr-start1200`):
+
+- *Back-off.* A step up whose transmission lost 10% or more of its frames is a failed probe:
+  the rate goes back to the one that worked before it (not as low as the SNR measured on
+  the failed transmission says, which on fast fading reads several dB low), and the failed
+  rate is not tried again for 3 transmissions, doubling at each further failure (up to
+  24), and reset by a clean step up. Losses at a rate already in use do not count.
+- *Start at 1200S* instead of 600S, the best fixed rate in every condition between the
+  extremes.
+
+The B2F session, median of four (the growing cap in all adaptive designs):
+
+| Condition | Fixed 600S | Fixed 1200S | Adaptive, start 600S | Adaptive, back-off, start 1200S |
+|---|---:|---:|---:|---:|
+| Moderate, 3 dB | | 0 of 4 complete | 1 of 4 | 2 of 4, 838 s |
+| Moderate, 9 dB | | 100 s | 121 s | 102 s |
+| Moderate, 21 dB | | 65 s | 59 s | 52 s |
+| Harsh, 6 dB | 130 s | 343 s | 129 s | 142 s |
+| Harsh, 12 dB | 125 s | 66 s | 81 s | 85 s |
+| Harsh, 18 dB | 125 s | 65 s | 86 s | 89 s |
+
+(Within a point the four sessions spread over 20-50%, so differences under about 15% are not
+resolved.) Adaptive is as good as the best fixed rate, or better, everywhere except the harsh
+channel above 9 dB, where it is 20-30% behind fixed 1200S: it still probes 2400S, which never
+works there. Better back-off will not fix that; knowing the channel will. The receiver could
+report how fast the channel is changing (the equaliser sees it), and 2400S could be ruled out
+on fast fading. Every fixed rate fails somewhere: 1200S at 3 dB moderate and 6 dB harsh, 600S
+by half everywhere above.
+
+**Drifting conditions** (moderate channel; SNR falling 18 to 3 dB or rising 3 to 18 dB over
+three minutes, or a random walk around 12 dB; `compare --drift fall rise walk --traffic b2f
+bulk`): the adaptive design (start 600S, growing cap) and fixed 1200S were within each
+other's spread in all six combinations (B2F 65-145 s, 12-kB transfers 100-185 s), and fixed
+600S was 2-4 times slower. No session of either failed: when the SNR dips, selective repeat
+waits it out, and these sessions were short enough to end before the worst of the fall. The
+drift scenarios did not separate the designs; the static extremes above did.
+
+**Still to measure** before the link layer is specified: a better start (a probe exchange,
+or the last rate used with the same station; starting at 1200S is the measured default for
+now); a report of how fast the channel fades, to rule out 2400S on fast fading; lost
+acknowledgements and timeouts (here a transmission not heard still costs only its own air
+time); and the real turnaround, which needs radios.
 
 ## 8. Next steps
 

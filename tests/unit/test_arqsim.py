@@ -108,3 +108,26 @@ def test_the_cap_is_short_until_the_rate_settles():
     link.a.settled = True
     link.transmit(link.a)
     assert 30.0 < link.log[-1]["seconds"] <= 40.0
+
+
+def test_a_failed_step_up_returns_to_the_rate_that_worked_and_holds():
+    """Back-off: a step up that lost frames sends the rate back to where it was and keeps it
+    below the failed rate for Design.backoff transmissions, doubling at each such failure;
+    an ordinary loss at a steady rate does not trigger it."""
+    link = arq.Link(arq.replace(arq.DESIGNS["sr-grow"], backoff=3), snr_db=20.0, seed=1)
+    s = link.a
+    s.asked, s.last_rate, s.last_delivered, s.last_snr = arq.mode(1200, "short"), 1200, 1.0, 20.0
+    assert link.proposal(s).rate == 2400 and s.probing == 2400  # a step up: a probe
+    s.asked, s.last_rate, s.last_delivered, s.last_snr = arq.mode(2400, "short"), 2400, 0.6, 5.0
+    assert link.proposal(s).rate == 1200  # failed: back to 1200, not as low as 5 dB says
+    assert (s.ceiling, s.hold, s.backoff) == (2400, 2, 3)
+    s.asked, s.last_rate, s.last_delivered, s.last_snr = arq.mode(1200, "short"), 1200, 1.0, 20.0
+    assert [link.proposal(s).rate for _ in range(2)] == [1200, 1200]  # held
+    assert link.proposal(s).rate == 2400  # the hold is over: try again
+    s.asked, s.last_rate, s.last_delivered = arq.mode(2400, "short"), 2400, 0.5
+    link.proposal(s)
+    assert s.backoff == 6  # failed again: twice as long
+    # A loss at a rate already settled is not a failed probe.
+    t = link.b
+    t.asked, t.last_rate, t.last_delivered, t.last_snr = arq.mode(1200, "short"), 1200, 0.8, 9.0
+    assert link.proposal(t).rate == 1200 and t.hold == 0

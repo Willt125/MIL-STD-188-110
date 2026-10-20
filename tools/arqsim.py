@@ -15,6 +15,8 @@ Usage:
     python tools/arqsim.py goodput                       # frames delivered per mode and SNR
     python tools/arqsim.py sweep --param frame_bytes --snrs 6 12 18
     python tools/arqsim.py sweep --param cap_s --traffic b2f bulk --snrs 6 18
+    python tools/arqsim.py goodput --channel harsh
+    python tools/arqsim.py compare --designs sr-grow sr-short --drift fall rise walk
 
 THE FRAME FORMAT IS A DRAFT FOR EXPERIMENTS (NETWORK.md D3; nothing is decided):
 
@@ -49,6 +51,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from m110c.bits import bytes_to_bits
+from m110c.channel import schedule as sched
 from m110c.channel.watterson import ChannelSpec, TimeVaryingChannel
 from m110c.modulate import modulate
 from m110c.rx.receiver import Receiver
@@ -82,6 +85,27 @@ LADDER = ((2400, 18.0), (1200, 11.0), (600, 7.0), (300, 7.0), (150, 5.0), (75, 2
 # sent again. Measured with `goodput` (2 paths 2 ms 1 Hz, short interleave, 200-byte frames,
 # 20-s transmissions; NETWORK.md): the best rate from these channel SNRs up. 300 bps never won.
 ARQ_SHORT = ((2400, 14.0), (1200, 8.0), (600, 4.5), (150, 2.0), (75, -99.0))
+
+
+# Channels: (paths, delay ms, Doppler spread Hz). Moderate is Table XVI's commonest; harsh is
+# its 5-ms, 5-Hz row (a fade every few tenths of a second).
+CHANNELS = {"moderate": (2, 2.0, 1.0), "harsh": (2, 5.0, 5.0)}
+
+# Drifting conditions: the SNR follows a schedule over the session (seconds from its start),
+# on top of the fading. Real drift takes minutes to hours; these are stress tests at the
+# scale of one session.
+SCENARIOS = {
+    "fall": lambda seed: sched.linear(18.0, 3.0, duration_s=180.0, start_s=10.0),
+    "rise": lambda seed: sched.linear(3.0, 18.0, duration_s=180.0, start_s=10.0),
+    "walk": lambda seed: sched.walk(12.0, 12.0, 400.0, volatility=1.5, seed=seed, bounds=(0, 24)),
+}
+
+
+def condition(snr):
+    """A number (dB) or a scenario name -> what TimeVaryingChannel takes, given the seed."""
+    if isinstance(snr, str):
+        return SCENARIOS[snr]
+    return lambda seed: snr
 
 
 def callsign(sign: str, ssid: int = 0) -> bytes:
@@ -304,6 +328,11 @@ class Design:
     max_frames: int | None = None  # DATA frames per transmission (None: as many as fit)
     interleave: str = "short"
     rate: int | None = 1200  # fixed data rate, or None: adapt from the peer's reports
+    # After a step up whose transmission lost 10% or more of its frames, the rate tried is
+    # not allowed again for this many transmissions, doubling (to 24) at each such failure
+    # and reset by a clean step up. 0: no back-off.
+    backoff: int = 0
+    start_rate: int = 600  # adaptive designs: the first data rate asked for, before any report
     description: str = ""
 
 
@@ -322,6 +351,31 @@ DESIGNS = {
             "sr-adapt",
             rate=None,
             description="selective repeat, short interleave, rate from the peer's reports",
+        ),
+        Design("sr-600", rate=600, description="selective repeat, fixed 600S (robust)"),
+        Design(
+            "sr-grow",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            description="adaptive rate, cap 10 s until the rate settles, then 30 s",
+        ),
+        Design(
+            "sr-backoff",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            description="sr-grow, with a back-off after a failed step up",
+        ),
+        Design(
+            "sr-start1200",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            description="sr-backoff, starting at 1200S",
         ),
         Design(
             "sr-adapt-long",
@@ -379,18 +433,26 @@ class Station:
     last_delivered: float | None = None  # share of its DATA frames that arrived
     asked: object = None  # the data mode this station last asked its peer for
     settled: bool = False  # the peer's last two requests named the same rate
+    # Back-off after a failed step up (Design.backoff): the rate being tried, the rate no
+    # longer allowed, for how many more transmissions, and the next hold's length.
+    probing: int | None = None
+    probe_base: int | None = None  # the rate before the step up
+    ceiling: int | None = None
+    hold: int = 0
+    backoff: int = 0
 
 
 class Link:
     """Two stations on one continuous channel, taking turns."""
 
-    def __init__(self, design: Design, snr_db: float, seed: int, channel=(2, 2.0, 1.0)):
+    def __init__(self, design: Design, snr_db, seed: int, channel=CHANNELS["moderate"]):
+        """``snr_db``: a number, or a schedule of dB against seconds (m110c.channel.schedule)."""
         self.d = design
         self.channel = TimeVaryingChannel(ChannelSpec(*channel), snr_db=snr_db, seed=seed)
         self.a = Station("A", callsign("N0CALL", 1))
         self.b = Station("B", callsign("N1CALL", 2))
         self.sid = session_id(self.a.call, self.b.call)
-        start = mode(design.rate, design.interleave) if design.rate else CONTROL
+        start = mode(design.rate or design.start_rate, design.interleave)
         self.a.data_mode = self.b.data_mode = start
         self.seconds = 0.0
         self.log = []
@@ -402,16 +464,39 @@ class Link:
         if self.d.rate:
             return mode(self.d.rate, self.d.interleave)
         if s.last_snr is None and s.last_delivered is None:
-            return CONTROL  # nothing heard yet: no grounds for any other choice
+            return mode(self.d.start_rate, "short")  # nothing heard yet: the starting rate
         if self.d.interleave == "long":
             return choose(s.last_snr, "long")
-        current = (s.asked or CONTROL).rate
+        current = s.asked.rate if s.asked else self.d.start_rate
         if s.last_snr is None:  # the last transmission was not heard at all
             rates = [rate for rate, _ in ARQ_SHORT]
             i = rates.index(current) if current in rates else rates.index(600)
             return mode(rates[min(i + 1, len(rates) - 1)], "short")
         rate = choose_arq(s.last_snr, current, s.last_delivered, s.last_rate)
+        if self.d.backoff:
+            rate = self._back_off(s, current, rate)
         return mode(rate, "short")
+
+    def _back_off(self, s: Station, current: int, rate: int) -> int:
+        """Keep the rate below one that just failed when tried (see Design.backoff). After a
+        failed step up, go back to the rate that worked before it: the SNR measured on the
+        failed transmission is no guide (on fast fading, 2400 bps measures several dB low)."""
+        if s.probing is not None and s.last_rate == s.probing and s.last_delivered is not None:
+            if s.last_delivered < 0.9:  # the step up failed
+                s.backoff = min(2 * s.backoff, 24) if s.backoff else self.d.backoff
+                s.ceiling, s.hold = s.probing, s.backoff
+                rate = s.probe_base
+            else:
+                s.backoff = 0
+            s.probing = None
+        if s.hold > 0:
+            s.hold -= 1
+            if rate >= s.ceiling:
+                slower = [r for r, _ in ARQ_SHORT if r < s.ceiling]
+                rate = slower[0] if slower else ARQ_SHORT[-1][0]
+        if rate > current:
+            s.probing, s.probe_base = rate, current
+        return rate
 
     def transmit(self, s: Station) -> bool:
         """``s`` sends HEAD, ACK and what DATA fits; the peer receives what it can.
@@ -533,7 +618,7 @@ def session_report(design: Design, snr: float, seed: int) -> None:
 def goodput_job(args):
     """One 20-s transmission of 200-byte DATA frames in mode ``m`` at ``snr``: how many
     frames arrived, and what the receiver measured."""
-    rate, interleave, snr, seed = args
+    rate, interleave, snr, seed, channel_name = args
     m = mode(rate, interleave)
     rng = np.random.default_rng(seed)
     sid = 0x42
@@ -541,7 +626,8 @@ def goodput_job(args):
     payloads = [rng.integers(0, 256, 200, np.uint8).tobytes() for _ in range(n)]
     frames = [frame("DATA", sid, struct.pack(">I", 200 * i) + p) for i, p in enumerate(payloads)]
     x = modulate(transmit(bytes_to_bits(b"".join(frames)), m))
-    channel = TimeVaryingChannel(ChannelSpec(2, 2.0, 1.0), snr_db=snr, seed=seed + 11)
+    spec = ChannelSpec(*CHANNELS[channel_name])
+    channel = TimeVaryingChannel(spec, snr_db=snr, seed=seed + 11)
     y = channel.process(np.concatenate([np.zeros(FS // 2, complex), x, np.zeros(FS // 3)]))
     rx = Receiver(interleave=interleave)
     got = parse(rx.process(y) + rx.finish(), sid)
@@ -551,7 +637,7 @@ def goodput_job(args):
 
 def goodput_report(results) -> None:
     rows = {}
-    for (rate, interleave, snr, _), got, n, seconds, measured in results:
+    for (rate, interleave, snr, _, _), got, n, seconds, measured in results:
         rows.setdefault((snr, rate, interleave), []).append((got, n, seconds, measured))
     print("SNR  mode  | frames delivered | data bps delivered | measured SNR (median)")
     for (snr, rate, interleave), v in sorted(rows.items(), key=lambda kv: (kv[0][0], -kv[0][1])):
@@ -590,25 +676,35 @@ def sweep_report(results) -> None:
 
 
 def compare_job(args):
-    name, snr, seed = args
-    link = Link(DESIGNS[name], snr, seed)
-    return args, link.run(b2f_turns(seed))
+    name, snr, seed, channel_name, traffic = args
+    link = Link(DESIGNS[name], condition(snr)(seed), seed, CHANNELS[channel_name])
+    return args, link.run(TRAFFIC[traffic](seed), max_transmissions=150)
 
 
 def compare_report(results) -> None:
     rows = {}
-    for (name, snr, _), r in results:
-        rows.setdefault((name, snr), []).append(r)
-    print("design         SNR | done | session (s), median [range] | transmissions | bps")
-    for (name, snr), v in sorted(rows.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+    for (name, snr, _, channel_name, traffic), r in results:
+        rows.setdefault((traffic, channel_name, str(snr), name), []).append(r)
+    print("traffic channel  SNR  design        | done | session (s), median [range] | tx | bps")
+    for (traffic, channel_name, snr, name), v in sorted(rows.items(), key=_condition_order):
         ok = [r for r in v if r["ok"]]
         secs = sorted(r["seconds"] for r in ok)
         span = f"{np.median(secs):6.1f} [{secs[0]:.0f}-{secs[-1]:.0f}]" if secs else "     -"
         tx = np.median([r["transmissions"] for r in v])
         bps = np.median([r["bps"] for r in v])
         print(
-            f"{name:13s} {snr:4.0f} | {len(ok):2d}/{len(v)} | {span:20s} | {tx:5.0f} | {bps:5.0f}"
+            f"{traffic:6s} {channel_name:8s} {snr:>4s} {name:13s} | {len(ok):2d}/{len(v)} | "
+            f"{span:20s} | {tx:3.0f} | {bps:5.0f}"
         )
+
+
+def _condition_order(kv):
+    traffic, channel_name, snr, name = kv[0]
+    try:
+        key = (0, float(snr), "")
+    except ValueError:
+        key = (1, 0.0, snr)
+    return (traffic, channel_name, key, name)
 
 
 def main(argv=None) -> int:
@@ -634,13 +730,17 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--seeds", type=int, default=4)
     p.add_argument("--jobs", type=int, default=os.cpu_count())
+    p.add_argument("--channel", choices=list(CHANNELS), default="moderate")
+    p.add_argument(
+        "--drift", nargs="+", choices=list(SCENARIOS), help="compare: drifting SNR scenarios"
+    )
     args = p.parse_args(argv)
     started = time.time()
     if args.experiment == "session":
         session_report(DESIGNS[args.design], args.snr, args.seed)
     elif args.experiment == "goodput":
         jobs = [
-            (rate, "short", snr, 100 * k + 1)
+            (rate, "short", snr, 100 * k + 1, args.channel)
             for rate in (2400, 1200, 600, 300, 150, 75)
             for snr in (0, 3, 6, 9, 12, 15, 18, 21, 24)
             for k in range(args.seeds)
@@ -667,7 +767,14 @@ def main(argv=None) -> int:
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             sweep_report(list(pool.map(sweep_job, jobs, chunksize=1)))
     else:
-        jobs = [(d, s, k + 1) for d in args.designs for s in args.snrs for k in range(args.seeds)]
+        conditions = args.drift or args.snrs
+        jobs = [
+            (d, s, k + 1, args.channel, t)
+            for d in args.designs
+            for s in conditions
+            for t in args.traffic
+            for k in range(args.seeds)
+        ]
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             compare_report(list(pool.map(compare_job, jobs, chunksize=1)))
     print(f"({time.time() - started:.0f} s)", file=sys.stderr)
