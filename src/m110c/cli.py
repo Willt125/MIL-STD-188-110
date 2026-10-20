@@ -245,6 +245,12 @@ def rx_parser() -> argparse.ArgumentParser:
         "next interleaver block (S5; long interleave: up to about 10 s; more CPU while idle)",
     )
     p.add_argument(
+        "--rolloff",
+        type=float,
+        default=0.25,
+        help="receive filter roll-off; best set to the transmitter's (default 0.25)",
+    )
+    p.add_argument(
         "--invert-spectrum",
         action="store_true",
         help="input is lower sideband (spectrum inverted, INT-021)",
@@ -333,6 +339,7 @@ def rx_main(argv=None) -> int:
                 equalize=args.equalize,
                 voice=args.voice,
                 late_entry=args.late_entry,
+                rolloff=args.rolloff,
             )
         except ValueError as exc:  # a sample rate too low for the signal
             print(f"m110c-rx: {exc}", file=sys.stderr)

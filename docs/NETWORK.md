@@ -128,10 +128,11 @@ with ARDOP's", never "ARDOP". Section 5 checks the interface; it fits.
 
 **D5 [PROPOSED] A narrower pulse for amateur use.** Part 97's 2.8 kHz limit on HF data
 (confirmed by the user, 2026-10-19), measured at -26 dB, is exceeded by our roll-off of 0.25
-(3.0 kHz). The transmitter's roll-off becomes a setting, with 0.15 (2.78 kHz at audio) as
-the amateur default; 0.25 stays available where the rules allow it. The margin at 0.15 is
-thin (20 Hz at audio, before a real transmitter's distortion), so the on-air spectrum must
-be measured before this is settled (§6). Other 110 modems recommend wider pulses still
+(3.0 kHz). The roll-off is now a setting on both sides (2026-10-20); proposed: 0.15 as the
+amateur default, with the transmit filter lengthened to 16 symbols each side (2749 Hz at
+audio, a 51 Hz margin instead of 20), and wider roll-offs (0.25, 0.35) only where
+authorised. Measured: no cost to our receiver from 0.15 to 0.35, matched or not
+(docs/PERFORMANCE.md, roll-off). Still to check: the on-air spectrum (§6). Other 110 modems recommend wider pulses still
 (Appendices C and D of 110C suggest a roll-off of 0.35), so a third-party 110 modem may not
 be usable on US amateur HF as it stands.
 
@@ -268,19 +269,9 @@ Measured on our modulator (root-raised cosine, roll-off 0.25):
 US amateur rules limit HF data to 2.8 kHz (confirmed by the user), so roll-off 0.25 does not
 fit; an earlier note of mine, "110 fits", was wrong. Roll-off 0.15 does (D5).
 
-What a narrower transmit pulse costs our receiver (which keeps its 0.25 filter), a first
-look: six 20-s messages per point, SNR in 3 kHz.
-
-| Mode, channel, SNR | TX 0.25 | TX 0.15 | TX 0.10 |
-|---|---:|---:|---:|
-| 2400S, noise only, 7 dB | 2.0e-4 | 2.4e-4 | 2.6e-4 |
-| 2400S, 2 paths 2 ms 1 Hz, 15 dB | 2.9e-3 | 5.4e-3 | 6.5e-3 |
-| 600S, noise only, -1 dB | 1.4e-3 | 1.4e-3 | 1.5e-3 |
-| 600S, 2 paths 2 ms 1 Hz, 4 dB | 3.1e-2 | 2.8e-2 | 3.0e-2 |
-
-No cost on noise-only channels; on fading channels the differences are within what six
-messages can resolve, except possibly 2400S. To be measured properly (more messages, and
-with the receiver's filter matched) before D5 is settled.
+What the narrower pulse costs our receiver: nothing measurable, from 0.15 to 0.35, matched
+or not (docs/PERFORMANCE.md, roll-off, twelve messages per point; a first look with six
+had hinted at a cost at 2400S on fading, which the larger run did not bear out).
 
 ## 6. Open questions and facts still needed
 
@@ -290,7 +281,7 @@ with the receiver's filter matched) before D5 is settled.
 - **Closing at low rates**: whether Pat's 30-s flush and disconnect timeouts cut sessions
   at 75 and 150 bps.
 - **The -26 dB bandwidth on a real transmitter** at roll-off 0.15 (our numbers are at
-  audio), and the receiver's cost of the narrower pulse, measured properly (D5).
+  audio). The receiver's cost is measured: none (D5).
 - **Keying latency and turnaround** on real radios (PTT, VOX, CAT), for leader timing
   and timeouts: the audio and keying milestone.
 - **Fade lengths** on the channels that matter (NVIS; 2 paths at 2 ms and 1 Hz; 5 ms and
@@ -307,7 +298,8 @@ with the receiver's filter matched) before D5 is settled.
 
 1. Done: Pat's ARDOP driver read (§5); D6 proposed. Its fbb package (B2F) is the next
    thing to read when B2F comes up.
-2. Make the transmit roll-off a setting and measure what 0.15 costs (D5).
+2. Done: the roll-off is a setting on both sides and 0.15 costs nothing measurable (D5).
+   Open: the defaults, and how wider settings are reserved for authorised use.
 3. Prototype frames and selective-repeat ARQ sessions in `tools/toystack.py` over the
    channel simulator, with B2F-sized traffic, before writing milestones.
 4. Then write the modem program's milestones in PLAN.md: audio and keying, the host

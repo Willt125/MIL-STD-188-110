@@ -684,3 +684,68 @@ The rules for the boundary itself held from the prototypes: two consecutive conf
 probes (or, at 75 bps, a confident exceptional set and the spacing of the next ones) and the
 decoding check. Two wrong-mode joins in the first run (300L on the fading channel, 75S at
 -6 dB) did not recur after the fixes above.
+
+## Roll-off: the transmit filter, the bandwidth and the receiver (2026-10-20)
+
+The pulse shape is not fixed by 110C: §5.3.2.3.9 says only that the waveform "must be
+filtered", and 110C limits the occupied bandwidth (99% of the power) to 3 kHz; its
+Appendices C and D suggest a root-raised cosine with a roll-off of 0.35. We used 0.25. US
+amateur rules limit HF data to 2.8 kHz measured at the points 26 dB down, which 0.25 exceeds
+(docs/NETWORK.md, D5). The roll-off is now a setting on both sides: `m110c-tx --rolloff`
+(as before) and `m110c-rx --rolloff` / `Receiver(rolloff=...)`, which sets the filters of
+the preamble search, the demodulators and late entry.
+
+### Bandwidth
+
+`python tools/rolloff_check.py bandwidth`: a 2400S message at audio; -26 dB relative to the
+mean power density over 600-3000 Hz.
+
+| Roll-off | 99% power | -26 dB | -26 dB, filter span 16 |
+|---:|---:|---:|---:|
+| 0.10 | 2452 Hz | 2754 Hz | 2641 Hz |
+| 0.15 | 2505 Hz | 2780 Hz | 2749 Hz |
+| 0.20 | 2571 Hz | 2888 Hz | 2848 Hz |
+| 0.25 | 2653 Hz | 2995 Hz | 2962 Hz |
+| 0.35 | 2801 Hz | 3202 Hz | 3178 Hz |
+
+Every roll-off meets 110C's 3 kHz. Only 0.15 and below meet 2.8 kHz at -26 dB, and with the
+default filter length (8 symbols each side) 0.15 does so by 20 Hz; doubling the length
+gives 51 Hz, because the -26 dB points of a short filter are set partly by its truncated
+skirts. 0.35 is for use only where wider emissions are authorised. These are audio
+measurements: a real transmitter's distortion widens them, so the on-air spectrum must
+still be checked.
+
+### What it costs the receiver
+
+`python tools/rolloff_check.py ber`: twelve 20-s messages per point, through the complete
+receiver; noise only 8 and 11 dB below each mode's Table XVI point, and its Table XVI fading
+channel at and 3 dB below the point. Transmit roll-off 0.15, 0.25 and 0.35, the receiver's
+filter at 0.25 or matched. Messages received without error, of 12:
+
+| Mode, channel, SNR | TX 0.15, RX 0.15 | 0.15, 0.25 | 0.25, 0.25 | 0.35, 0.25 | 0.35, 0.35 |
+|---|---:|---:|---:|---:|---:|
+| 2400S, noise, 10 dB | 12 | 12 | 12 | 12 | 12 |
+| 2400S, fading, 18 dB | 4 | 4 | 5 | 6 | 6 |
+| 1200S, noise, 3 dB | 6 | 6 | 6 | 6 | 6 |
+| 1200S, fading, 11 dB | 3 | 6 | 3 | 5 | 5 |
+| 600S, noise, -1 dB | 4 | 3 | 4 | 3 | 7 |
+| 600S, fading, 7 dB | 5 | 5 | 5 | 4 | 5 |
+| 75S, fading, 2 dB | 11 | 11 | 11 | 11 | 11 |
+
+Bit error rates over the same messages:
+
+| Mode, channel, SNR | 0.15, 0.15 | 0.15, 0.25 | 0.25, 0.25 | 0.35, 0.25 | 0.35, 0.35 |
+|---|---:|---:|---:|---:|---:|
+| 2400S, noise, 7 dB | 3.7e-4 | 4.1e-4 | 3.1e-4 | 3.6e-4 | 3.6e-4 |
+| 2400S, fading, 18 dB | 1.2e-3 | 1.3e-3 | 1.1e-3 | 7.1e-4 | 5.9e-4 |
+| 1200S, noise, 3 dB | 3.3e-4 | 2.4e-4 | 3.1e-4 | 2.7e-4 | 2.9e-4 |
+| 1200S, fading, 11 dB | 4.3e-3 | 4.4e-3 | 4.3e-3 | 4.1e-3 | 4.2e-3 |
+| 600S, noise, -1 dB | 5.3e-4 | 6.7e-4 | 6.5e-4 | 7.4e-4 | 5.7e-4 |
+
+Within what twelve messages can resolve, the roll-off makes no difference to this
+receiver, from 0.15 to 0.35, matched or not: the equaliser absorbs the small change in
+pulse shape. (Points where nearly nothing decodes, and 75 bps, whose rates are dominated by
+the odd lost message, are in the tool's output but say nothing either way. 2400S on the
+fading channel leans towards the wider pulses, by about one message in twelve, which is
+inside the spread.) So the amateur limit costs nothing measurable here; how other 110
+modems receive a 0.15 signal is a question for interoperability testing (PLAN.md S9).

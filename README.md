@@ -93,6 +93,7 @@ rest of the message (about 1.5 s of signal to join with zero or short interleave
 with long; docs/PERFORMANCE.md, S5). At 300, 150 and 75 bps with zero or short interleave
 a block is not a whole number of bytes, so use `--async` there.
 Options: `--async`/`--msb-first` (must match the sender), `--interleave`, `--late-entry`,
+`--rolloff` (the transmitter's filter; see the amateur bandwidth note in docs/NETWORK.md, D5),
 `--invert-spectrum` (lower-sideband input), `--max-offset`, `--sample-rate` (any rate above 6800;
 WAV: from the header; rates that are not multiples of 2400 are resampled to 9600 first, for
 about 5% more CPU), `--no-equalizer` (the simpler

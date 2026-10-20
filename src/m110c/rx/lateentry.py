@@ -183,12 +183,13 @@ class LateEntrySearch:
         max_offset_hz: float = MAX_OFFSET_HZ,
         threshold: float = THRESHOLD,
         start: int = 0,
+        rolloff: float = 0.25,
     ):
         self.sample_rate = sample_rate
         self.sps = sample_rate // T.SYMBOL_RATE
         self.carrier_hz = carrier_hz
         self.threshold = threshold
-        self.taps = rrc_taps(self.sps, 0.25)
+        self.taps = rrc_taps(self.sps, rolloff)
         self.bins = np.arange(-max_offset_hz, max_offset_hz + BIN_HZ / 2, BIN_HZ)
         self.window = int(WINDOW_SECONDS * sample_rate)
         self.hop = int(HOP_SECONDS * sample_rate)
@@ -250,11 +251,16 @@ class LateEntry:
     demodulator, finds and verifies a block boundary. :meth:`process` returns True once it
     has; then :attr:`mode`, :attr:`block_start` and :meth:`symbols_from_block` hand over."""
 
-    def __init__(self, lock: LateLock, sample_rate: int = 9600):
+    def __init__(self, lock: LateLock, sample_rate: int = 9600, rolloff: float = 0.25):
         self.lock = lock
         self.start_index = int(np.floor(lock.segment_start)) - 8
         self.demod = EqualizingDemodulator(
-            lock.provisional_mode, lock, sample_rate, start_index=self.start_index, late=True
+            lock.provisional_mode,
+            lock,
+            sample_rate,
+            rolloff=rolloff,
+            start_index=self.start_index,
+            late=True,
         )
         self._z: list = []
         self._v: list = []
