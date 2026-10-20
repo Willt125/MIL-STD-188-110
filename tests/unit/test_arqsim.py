@@ -131,3 +131,60 @@ def test_a_failed_step_up_returns_to_the_rate_that_worked_and_holds():
     t = link.b
     t.asked, t.last_rate, t.last_delivered, t.last_snr = arq.mode(1200, "short"), 1200, 0.8, 9.0
     assert link.proposal(t).rate == 1200 and t.hold == 0
+
+
+def scripted(link, outcomes):
+    """Replace the radio: each transmission's outcome (did the peer understand it?) comes
+    from ``outcomes`` per station; delivery itself is perfect when understood."""
+    calls = []
+
+    def fake(s, poll=False):
+        ok = outcomes[s.name].pop(0) if outcomes[s.name] else True
+        calls.append((s.name, poll, ok))
+        p = link.peer(s)
+        if ok and not poll:
+            for off, b in s.out.pieces(10_000, 200):
+                p.inc.on_data(off, b)
+        if ok:
+            p.out.on_ack(arq.Ack(s.inc.next, s.inc.ack_ranges(), 10.0, 1200, "short"))
+        link.seconds += 1.0
+        return ok
+
+    link.transmit = fake
+    return calls
+
+
+@pytest.mark.parametrize("retry", ["resend", "poll"])
+def test_master_turns_time_out_on_silence_and_poll_after_an_unreadable_reply(retry):
+    design = arq.replace(arq.DESIGNS["rt-poll"], retry=retry)
+    link = arq.Link(design, snr_db=20.0, seed=1)
+    # A's first transmission is not heard (B stays silent: a timeout); the second is heard
+    # but B's reply is unreadable; then everything works.
+    calls = scripted(link, {"A": [False, True], "B": [False]})
+    r = link.run([("A", b"x" * 300)])
+    assert r["ok"] and r["timeouts"] == 1 and r["unreadable"] == 1
+    assert calls[0] == ("A", False, False)  # silence: B did not transmit
+    assert calls[1][0] == "A" and calls[2] == ("B", False, False)  # heard; reply lost
+    assert calls[3] == ("A", retry == "poll", True)  # then poll (or resend)
+    assert r["polls"] == (1 if retry == "poll" else 0)
+
+
+def test_master_turns_give_up():
+    link = arq.Link(arq.DESIGNS["rt-poll"], snr_db=20.0, seed=1)
+    scripted(link, {"A": [False] * 20, "B": []})
+    r = link.run([("A", b"x" * 300)])
+    assert not r["ok"] and r["gave_up"] and r["timeouts"] == arq.MAX_RETRIES
+
+
+def test_a_second_ack_copy_follows_the_data(monkeypatch):
+    sent = []
+    real = arq.bytes_to_bits
+    monkeypatch.setattr(arq, "bytes_to_bits", lambda b: sent.append(b) or real(b))
+    link = arq.Link(arq.DESIGNS["rt-ack2"], snr_db=25.0, seed=1)
+    link.a.out.write(bytes(600))
+    link.transmit(link.a)
+    kinds = [k for k, _ in arq.parse(sent[-1], link.sid)]
+    assert kinds[:2] == ["HEAD", "ACK"] and kinds[-1] == "ACK" and kinds.count("DATA") == 3
+    link.b.out.write(b"")
+    link.transmit(link.b)  # nothing to send but the acknowledgement: one copy
+    assert [k for k, _ in arq.parse(sent[-1], link.sid)] == ["HEAD", "ACK"]

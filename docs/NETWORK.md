@@ -469,11 +469,52 @@ other's spread in all six combinations (B2F 65-145 s, 12-kB transfers 100-185 s)
 waits it out, and these sessions were short enough to end before the worst of the fall. The
 drift scenarios did not separate the designs; the static extremes above did.
 
+**Lost transmissions, timeouts and lost acknowledgements** (designs `rt-*`). Until now a
+transmission nobody heard cost only its air time, and the other station then went anyway,
+though it could not have known its turn had come. Now the turns are as a real protocol would
+take them: the caller (A) transmits; the answering station (B) replies only to what it
+understood; if B heard nothing, A waits out a timeout (3 s: turnaround, a short preamble,
+detection margin) and tries again; if B replied but A could not read the reply, A tries
+again once the channel is clear; after 8 tries in a row without a readable reply A gives up.
+Only A retries, so the two never time out into each other. Telling an unreadable reply from
+silence assumes a busy detector, which is still to be built (§6).
+
+Two retry policies after an unreadable reply: *resend* the data still unacknowledged, or
+*poll*, a short control transmission asking B to repeat its acknowledgement (B very likely
+has the data already). After silence A always resends. And a second copy of the ACK frame
+after the data (`ack_copies`), against a fade that takes the acknowledgement but spares the
+data around it, a case in which the receiver of that transmission learns nothing about what
+it sent and sends it all again.
+
+| Condition (four sessions each) | Optimistic turns | Realistic, resend | Realistic, poll | Poll, ACK twice |
+|---|---:|---:|---:|---:|
+| B2F, moderate, 3 dB | 2 of 4, 838 s | 2 of 4, 806 s | 2 of 4, 694 s | |
+| B2F, moderate, 6 dB | 197 s | 199 s | 199 s | 223 s |
+| B2F, moderate, 9 dB | 102 s | 102 s | 102 s | 83 s |
+| B2F, harsh, 6 dB | 142 s | 138 s | 138 s | 138 s |
+| B2F, harsh, 12 dB | 85 s | 85 s | 85 s | 76 s |
+| 12 kB, moderate, 6 dB | | 367 s | 362 s | 330 s |
+| 12 kB, harsh, 6 dB | | | 235 s | 244 s |
+
+Whole transmissions are rarely lost: from 6 dB up, B missed A's transmission at most 4 times
+in four sessions, and A failed to read B's reply at most 10 times (bulk, 6 dB). The 110
+preamble is far more robust than the data behind it. So realistic turn-taking costs little
+above 3 dB, and polling helps only where losses are common (3 dB: 694 s against 806 s).
+Lost acknowledgements are commoner, and the second copy cut them from 22 to 6 over the
+eight conditions measured (10 to 4 in the worst, B2F at 6 dB), for about 40 bytes per data
+transmission; session times moved both ways within the spread (once one acknowledgement
+differs, a session takes a different course). No session deadlocked, and giving up works as
+designed (unit tests). Proposed: realistic turns with the caller retrying, polling after an
+unreadable reply, and the ACK sent twice when a transmission carries data.
+
+Not modelled yet: collisions with other stations; a busy detector's own misses (which
+would turn an unreadable reply into silence, and a retry into a collision); and the
+closing exchange of a session.
+
 **Still to measure** before the link layer is specified: a better start (a probe exchange,
 or the last rate used with the same station; starting at 1200S is the measured default for
-now); a report of how fast the channel fades, to rule out 2400S on fast fading; lost
-acknowledgements and timeouts (here a transmission not heard still costs only its own air
-time); and the real turnaround, which needs radios.
+now); a report of how fast the channel fades, to rule out 2400S on fast fading; and the real
+turnaround and the busy detector, which need radios and a third station.
 
 ## 8. Next steps
 

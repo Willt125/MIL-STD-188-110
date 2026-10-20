@@ -72,6 +72,13 @@ FS = 9600
 TURNAROUND_S = 0.5  # assumed radio switching time per change of direction
 GAP_S = 0.3  # between transmissions of the same station (not used: stations alternate)
 CONTROL = mode(600, "short")  # transmissions that carry little or no data
+# Turn-taking with losses (Design.turns == "master"): after transmitting, the caller waits
+# this long for a reply to begin (turnaround, a short preamble, detection margin) before it
+# concludes the answering station heard nothing; and gives up after this many transmissions
+# in a row without a reply it could read.
+TIMEOUT_S = 3.0
+MAX_RETRIES = 8
+POLL = 1  # HEAD flags: "repeat your last acknowledgement" (no data sent with it)
 
 # Mode choice from the SNR the receiver measures (NETWORK.md §3; tools/toystack.py): the
 # estimate reads about 3.5 dB below the channel SNR. Required channel SNRs per rate, long
@@ -333,6 +340,18 @@ class Design:
     # and reset by a clean step up. 0: no back-off.
     backoff: int = 0
     start_rate: int = 600  # adaptive designs: the first data rate asked for, before any report
+    # "alternate": the stations simply take turns, a transmission nobody heard costing only
+    # its air time (optimistic: the other station could not know it was its turn).
+    # "master": the caller (A) transmits and the answering station (B) replies only to what
+    # it heard; A times out on silence and retries; A gives up after MAX_RETRIES.
+    turns: str = "alternate"
+    # After a reply A detected but could not read (master turns only): "resend" the data
+    # still unacknowledged, or "poll" (a short control transmission asking B to repeat its
+    # acknowledgement, which very likely says the data arrived). After silence A resends.
+    retry: str = "resend"
+    # Copies of the ACK frame per transmission: 2 puts a second one at the end, so a fade
+    # over the first does not lose it while the data around it arrives.
+    ack_copies: int = 1
     description: str = ""
 
 
@@ -376,6 +395,40 @@ DESIGNS = {
             backoff=3,
             start_rate=1200,
             description="sr-backoff, starting at 1200S",
+        ),
+        Design(
+            "rt-resend",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="resend",
+            description="sr-start1200, realistic turns: timeouts, retries resend the data",
+        ),
+        Design(
+            "rt-poll",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            description="the same, polling for the acknowledgement after an unreadable reply",
+        ),
+        Design(
+            "rt-ack2",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            ack_copies=2,
+            description="rt-poll, with a second copy of the ACK frame after the data",
         ),
         Design(
             "sr-adapt-long",
@@ -456,6 +509,7 @@ class Link:
         self.a.data_mode = self.b.data_mode = start
         self.seconds = 0.0
         self.log = []
+        self.timeouts = self.polls = self.unreadable = self.acks_missed = 0
 
     def peer(self, s: Station) -> Station:
         return self.b if s is self.a else self.a
@@ -498,15 +552,16 @@ class Link:
             s.probing, s.probe_base = rate, current
         return rate
 
-    def transmit(self, s: Station) -> bool:
-        """``s`` sends HEAD, ACK and what DATA fits; the peer receives what it can.
-        Returns whether the peer heard the transmission at all."""
+    def transmit(self, s: Station, poll: bool = False) -> bool:
+        """``s`` sends HEAD, ACK and what DATA fits (only HEAD and ACK for a poll); the peer
+        receives what it can. Returns whether the peer understood any of it (decoded a frame
+        of this session)."""
         p = self.peer(s)
         prop = self.proposal(s)
         s.asked = prop
         ack = Ack(s.inc.next, s.inc.ack_ranges(), s.last_snr, prop.rate, prop.interleave)
         control = [
-            frame("HEAD", self.sid, HEAD.pack(s.call, p.call, 0)),
+            frame("HEAD", self.sid, HEAD.pack(s.call, p.call, POLL if poll else 0)),
             frame("ACK", self.sid, ack.pack()),
         ]
         m = s.data_mode
@@ -514,7 +569,7 @@ class Link:
         if self.d.settle_cap_s is not None and not s.settled:
             cap = min(cap, self.d.settle_cap_s)
         room = capacity(m, cap) - sum(len(f) for f in control)
-        pieces = s.out.pieces(room, self.d.frame_bytes)
+        pieces = [] if poll else s.out.pieces(room, self.d.frame_bytes)
         if self.d.max_frames is not None:
             pieces = pieces[: self.d.max_frames]
         if not pieces:
@@ -522,6 +577,8 @@ class Link:
         frames = control + [
             frame("DATA", self.sid, struct.pack(">I", off) + b) for off, b in pieces
         ]
+        if self.d.ack_copies > 1 and pieces:
+            frames.append(control[1])  # the same ACK again, after the data
         data = b"".join(frames)
         x = modulate(transmit(bytes_to_bits(data), m))
         gap = np.zeros(int(TURNAROUND_S * FS), complex)
@@ -534,8 +591,14 @@ class Link:
         p.last_rate = m.rate
         p.last_delivered = None  # unless DATA was sent (below)
         n_data = 0
+        if got and not any(kind == "ACK" for kind, _ in got):
+            self.acks_missed += 1  # the transmission arrived, its acknowledgement did not
+        acked = False
         for kind, payload in got:
+            if kind == "ACK" and acked:
+                continue  # the second copy
             if kind == "ACK":
+                acked = True
                 a = Ack.unpack(payload)
                 p.out.on_ack(a)
                 new = mode(a.rate, a.interleave)
@@ -554,18 +617,21 @@ class Link:
                 "frames": len(pieces),
                 "received": n_data,
                 "heard": heard,
+                "understood": bool(got),
+                "poll": poll,
                 "snr": p.last_snr,
             }
         )
-        return heard
+        return bool(got)
 
     def run(self, turns: list, max_transmissions: int = 100) -> dict:
         """Play the application's turns; returns the session's totals."""
         queue = list(turns)
         expected = {"A": 0, "B": 0}  # bytes each station's peer must receive
-        speaker = self.a
-        transmissions = 0
-        while transmissions < max_transmissions:
+        self.timeouts = self.polls = self.unreadable = self.acks_missed = 0
+        gave_up = False
+
+        def feed():
             # The application writes the next turn when everything before it has arrived.
             while queue:
                 who, b = queue[0]
@@ -575,12 +641,51 @@ class Link:
                 s.out.write(b)
                 expected[who] += len(b)
                 queue.pop(0)
+
+        def finished():
             delivered = self.b.inc.next >= expected["A"] and self.a.inc.next >= expected["B"]
-            if not queue and delivered and self.a.out.done and self.b.out.done:
-                break
-            self.transmit(speaker)
-            transmissions += 1
-            speaker = self.peer(speaker)
+            return not queue and delivered and self.a.out.done and self.b.out.done
+
+        transmissions = 0
+        if self.d.turns == "alternate":
+            speaker = self.a
+            while transmissions < max_transmissions:
+                feed()
+                if finished():
+                    break
+                self.transmit(speaker)
+                transmissions += 1
+                speaker = self.peer(speaker)
+        else:
+            fails, poll = 0, False
+            while transmissions < max_transmissions:
+                feed()
+                if finished():
+                    break
+                understood = self.transmit(self.a, poll=poll)
+                transmissions += 1
+                self.polls += poll
+                poll = False
+                feed()
+                if finished():  # (the closing exchange is not modelled)
+                    break
+                if not understood:  # B heard nothing it could use, so it stays silent
+                    self.seconds += TIMEOUT_S
+                    self.timeouts += 1
+                    fails += 1
+                else:
+                    if self.transmit(self.b):
+                        fails = 0
+                    else:
+                        # A hears B's signal but cannot read it (a busy detector tells
+                        # that from silence): B very likely has A's data.
+                        self.unreadable += 1
+                        fails += 1
+                        poll = self.d.retry == "poll"
+                    transmissions += 1
+                if fails >= MAX_RETRIES:
+                    gave_up = True
+                    break
         ok = not queue and self.b.inc.next >= expected["A"] and self.a.inc.next >= expected["B"]
         useful = expected["A"] + expected["B"]
         return {
@@ -591,6 +696,11 @@ class Link:
             "bps": 8 * useful / self.seconds if ok else 0.0,
             "lost": sum(1 for e in self.log if not e["heard"]),
             "modes": sorted({e["mode"] for e in self.log}),
+            "timeouts": self.timeouts,
+            "polls": self.polls,
+            "unreadable": self.unreadable,
+            "acks_missed": self.acks_missed,
+            "gave_up": gave_up,
         }
 
 
@@ -613,6 +723,12 @@ def session_report(design: Design, snr: float, seed: int) -> None:
         f"{'complete' if r['ok'] else 'FAILED'}: {r['bytes']} bytes in {r['seconds']:.1f} s, "
         f"{r['transmissions']} transmissions ({r['lost']} unheard), {r['bps']:.0f} bps"
     )
+    if design.turns == "master":
+        print(
+            f"  {r['timeouts']} timeout(s) of {TIMEOUT_S:g} s (B heard nothing), "
+            f"{r['unreadable']} reply(ies) A could not read, {r['polls']} poll(s)"
+            + (", gave up" if r["gave_up"] else "")
+        )
 
 
 def goodput_job(args):
@@ -685,7 +801,10 @@ def compare_report(results) -> None:
     rows = {}
     for (name, snr, _, channel_name, traffic), r in results:
         rows.setdefault((traffic, channel_name, str(snr), name), []).append(r)
-    print("traffic channel  SNR  design        | done | session (s), median [range] | tx | bps")
+    print(
+        "traffic channel  SNR  design        | done | session (s), median [range] | tx | bps"
+        " | timeouts, unreadable replies, ACKs lost (total)"
+    )
     for (traffic, channel_name, snr, name), v in sorted(rows.items(), key=_condition_order):
         ok = [r for r in v if r["ok"]]
         secs = sorted(r["seconds"] for r in ok)
@@ -694,7 +813,9 @@ def compare_report(results) -> None:
         bps = np.median([r["bps"] for r in v])
         print(
             f"{traffic:6s} {channel_name:8s} {snr:>4s} {name:13s} | {len(ok):2d}/{len(v)} | "
-            f"{span:20s} | {tx:3.0f} | {bps:5.0f}"
+            f"{span:20s} | {tx:3.0f} | {bps:5.0f} | "
+            f"{sum(r['timeouts'] for r in v)}, {sum(r['unreadable'] for r in v)}, "
+            f"{sum(r['acks_missed'] for r in v)}"
         )
 
 
