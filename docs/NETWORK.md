@@ -312,7 +312,10 @@ had hinted at a cost at 2400S on fading, which the larger run did not bear out).
   of LZHUF), and how Pat implements it.
 - **Gateway policy**: whether RMS operators could accept a new transport, and on what
   terms. Not needed before level 2 of D2 works.
-- **Busy detection** of signals other than 110.
+- **Busy detection** of signals other than 110. The many-station model (§7) says a busy
+  detector is needed in any net of more than a few stations, but not a sensitive one: one
+  deaf below 6 dB did about as well as one hearing −3 dB. What it must have is a quiet
+  period longer than any gap inside a session.
 
 ## 7. Prototype: selective-repeat ARQ sessions (2026-10-20)
 
@@ -507,14 +510,182 @@ differs, a session takes a different course). No session deadlocked, and giving 
 designed (unit tests). Proposed: realistic turns with the caller retrying, polling after an
 unreadable reply, and the ACK sent twice when a transmission carries data.
 
-Not modelled yet: collisions with other stations; a busy detector's own misses (which
-would turn an unreadable reply into silence, and a retry into a collision); and the
-closing exchange of a session.
+Not modelled here: other stations (see "Many stations on one frequency" below); a busy
+detector's own misses (which would turn an unreadable reply into silence, and a retry into
+a collision); and the closing exchange of a session.
 
-**Still to measure** before the link layer is specified: a better start (a probe exchange,
-or the last rate used with the same station; starting at 1200S is the measured default for
-now); a report of how fast the channel fades, to rule out 2400S on fast fading; and the real
-turnaround and the busy detector, which need radios and a third station.
+**A better start** (designs `st-*`, against rt-ack2, which starts at 1200S and climbs one
+rung per report). Two ideas:
+- *Jump*: the first report from each side goes straight to the rate its SNR supports.
+- *Remember*: start at the rates the last session with the same station ended on. Here
+  that is a session just before, on the same conditions: the best case for memory.
+
+| Condition (four sessions each) | rt-ack2 | Jump | Remember | Remember, never below 1200S |
+|---|---:|---:|---:|---:|
+| Moderate, 3 dB | 3 of 4, 724 s | 3 of 4, 724 s | 2 of 4, 692 s | |
+| Moderate, 9 dB | 83 s | 83 s | 107 s | 83 s |
+| Moderate, 21 dB | 52 s | 52 s | 37 s | 37 s |
+| Harsh, 6 dB | 138 s | 138 s | 143 s | 138 s |
+| Harsh, 18 dB | 78 s | 78 s | 74 s | 74 s |
+
+Jumping changed nothing, and could not have. From 1200S the only rung up is 2400S, which the
+one-rung climb reaches in one report anyway, and the rule never limited going down. I should
+have seen that before measuring it. Remembering saves about 30% at 21 dB, where the session
+starts at 2400S instead of spending its first data transmissions at 1200S. It lost at 9 dB,
+on one session of four. There the last session had ended at 600S, and the new one started
+there; the other three remembered 1200S, the same as the fixed start. With four sessions a
+point, one slower session moves the median. So: remember, but only upward. Start at the remembered rate when it is
+higher than 1200S, else at 1200S. That kept every gain and none of the losses.
+
+Not measured: memory that has gone stale. Starting too high costs one failed transmission,
+then the back-off falls to the rate below. Starting too low cannot happen with the floor.
+Proposed: start at 1200S, or the last rate used with the same station if higher.
+
+**A fading-rate report from the receiver.** The equaliser re-estimates the channel for every
+unit of data. How much the estimate changes over a lag tells how fast the channel fades.
+`EqualizingDemodulator.fading_hz` compares estimates about 0.1 s apart (240 symbols) with
+estimates one unit apart, which removes the estimation noise. Under a Gaussian Doppler
+spectrum the correlation over the lag is ρ = exp(−2π²σ²τ²); it reports the fading bandwidth
+2σ in Hz. The report is:
+- `Message.fading_hz`, printed by `m110c-rx` beside the SNR;
+- `None` without the equaliser, or with fewer than 20 pairs of estimates;
+- counted only while the equaliser fits the signal (half or more of the unit), so noise
+  after a message does not count.
+
+Measured against the simulator, 2400-75 bps and 6-20 dB:
+- within about 10% from 0.5 to 5 Hz, a little high for slow fading at low SNR;
+- saturating near 6-7 Hz for faster fading;
+- a fair reading already from 150 bytes at 1200 bps (`tests/unit/test_fading_rate.py`).
+
+In arqsim sessions it read 4-5 Hz on the harsh channel (5 Hz) and about 1 Hz on the
+moderate one. One short, failed 2400S transmission read 2.7 Hz, so the limit has a margin.
+The rule (design `fd-limit`): while the last reading is above 3 Hz, ask for nothing faster
+than 1200S.
+
+| Condition (six sessions each) | rt-ack2 | With the fading rule |
+|---|---:|---:|
+| Harsh, 9 dB | 123 s | 123 s |
+| Harsh, 15 dB | 66 s | 61 s |
+| Harsh, 21 dB | 77 s | 61 s |
+| Moderate, 15 dB | 72 s | 72 s |
+| Moderate, 21 dB | 48 s | 48 s |
+
+On the harsh channel the adaptive design now matches fixed 1200S, its best rate, where
+before it was 20-30% behind. It stops probing 2400S, which never works there. On the
+moderate channel the rule never fired. Proposed: the receiver reports the fading rate
+beside the SNR, and the rate rule caps at 1200S above 3 Hz.
+
+**Many stations on one frequency** (`tools/netsim.py`). Everything above is two stations
+alone. A net has many, on one frequency, some unable to hear each other, and no busy
+detector exists yet. Twenty stations over hours are far too slow to put through the modem,
+so this is an event-level model built on what arqsim measured. Each transmission has its
+real air time and arqsim's frames. Each frame arrives with the probability `goodput`
+measured for its mode, at the SINR its receiver sees over it. Every overlapping
+transmission counts as noise at full power.
+
+Other assumptions:
+- A station transmitting hears nothing.
+- A receiver already following one signal misses a later preamble ("capture").
+- Sessions follow rt-ack2 at the best rate for the link's SNR.
+- A station holds one session at a time, and ignores other callers until it is free (or
+  60 s after it last heard its caller).
+- A caller that gives up tries again 1-5 minutes later, three attempts in all.
+
+Traffic is arqsim's B2F session (about 6 kB), offered at random (Poisson) by every calling
+station. Two topologies:
+- *Hub*: clients calling a gateway everyone reaches at 6-24 dB. Two clients hear each
+  other at 0-24 dB, or not at all, with the chance "hidden".
+- *Mesh*: any two stations at 6-24 dB, or not at all; sessions between random pairs.
+
+Channel access is the variable under test:
+
+| Access | Rule before a call, and before retrying after a failure |
+|---|---|
+| ALOHA | none: no busy detector |
+| LBT | listen before talk: nothing detected (above −3 dB) for 4 s, longer than a turnaround or a timeout, so a session in progress keeps the channel; else wait 1-10 s and look again |
+| LBT, poor detector | the same, hearing only signals above 6 dB |
+| LBT, instant | the same detector, checking only the moment before transmitting |
+| LBT + NAV | LBT, and a station that decodes another session's HEAD defers for 40 s ("virtual carrier sense") |
+| LBT, long | a 35-s quiet period: longer than any transmission, so one end of a session in progress is always heard |
+
+As a check, one link alone takes 37, 55, 94 and 151 s at 21, 15, 9 and 6 dB in this model.
+arqsim with the real modem takes 52, about 68, 83 and 223 s (37 s at 21 dB once the rate
+is remembered, below). The model is 0-30% optimistic: its rate has already settled and its
+channel has no long fades. Its comparisons between access rules are what it is for.
+
+One gateway, clients at one session an hour each, 30% of client pairs hidden (eight
+four-hour runs per point; sessions done, then the delay from offer to completion, median
+and 90th percentile, in s):
+
+| Clients | ALOHA | LBT | LBT, poor detector | LBT + NAV | LBT, long |
+|---:|---|---|---|---|---|
+| 5 | 100%, 56 / 146 | 100%, 52 / 135 | 100%, 52 / 135 | 100%, 55 / 139 | 100%, 54 / 138 |
+| 10 | 98%, 75 / 284 | 100%, 67 / 163 | 100%, 67 / 161 | 100%, 80 / 189 | 100%, 76 / 186 |
+| 20 | 92%, 87 / 429 | 100%, 67 / 179 | 100%, 67 / 181 | 100%, 84 / 252 | 100%, 83 / 247 |
+| 30 | 67%, 164 / 595 | 100%, 93 / 340 | 98%, 94 / 394 | 100%, 164 / 690 | 100%, 169 / 758 |
+
+The channel was busy 8%, 16%, 30% and 49% of the time with LBT. Load, ten clients and one
+gateway, 30% hidden:
+
+| Sessions offered per hour | ALOHA | LBT | LBT + NAV | Channel busy (LBT) |
+|---:|---|---|---|---:|
+| 20 | 84%, 108 / 495 | 100%, 81 / 266 | 100%, 112 / 346 | 36% |
+| 30 | 63%, 228 / 704 | 99%, 115 / 570 | 100%, 193 / 957 | 56% |
+| 40 | 41%, 335 / 945 | 95%, 215 / 2666 | 100%, 518 / 3033 | 69% |
+| 51 | 27%, 542 / 1940 | 92%, 700 / 5487 | 100%, 1141 / 5769 | 80% |
+
+What this says:
+
+- **A busy detector is not optional for a net.** Without one, a frequency serves a handful
+  of stations. From about ten upward, sessions start to fail, and from twenty a tenth or
+  more fail even after three attempts. The losses compound: a caller that finds its gateway
+  busy, or collides, retries eight times over about 40 s, damaging the session in progress.
+- **Plain listen-before-talk carries the load up to about 30 sessions an hour on one
+  frequency** (channel about half busy, 90% of sessions done within 6 minutes), and
+  degrades gracefully above it. The quiet period matters: checking only the instant before
+  transmitting lost 8% of sessions at 30 clients (1.43 attempts per session against 1.09).
+  The channel looks free in a session's own turnaround and timeout gaps.
+- **The detector need not be sensitive.** A detector deaf below 6 dB did almost as well as
+  one hearing −3 dB. In the model a station's detectability at the caller and its
+  interference at the receiver are drawn independently, so this is not built in. A simple
+  detector (§6) should do.
+- **Hidden stations cost little in a hub.** Every client hears the gateway, which speaks at
+  least every ~33 s of a session (the cap), so the exposed window is a hidden client's own
+  turn. With 60% of client pairs hidden, LBT needed at most 1.2 attempts per session (30 clients). In the
+  mesh with 20 stations, LBT completed every session with 0-60% of pairs hidden (median
+  68-75 s), against 84-98% for ALOHA.
+- **Virtual carrier sense and the long quiet period do what they are for, at a price.**
+  Fewer attempts, less air per session (65 s against 81 s at 51 sessions an hour), and no
+  failed session even far past saturation. But every caller waits longer: median delays
+  are 1.2-2 times plain LBT at every load measured. A HEAD frame names its session, so a
+  deferral rule costs nothing to add later, as an overload mode if a busy net needs one.
+- **The air time of one frequency is the limit**, not the protocol. About 60 s of air per
+  B2F session means one frequency cannot pass 60 sessions an hour, and delays grow from
+  half that. A second gateway on the same frequency helped, but only through better links.
+  Clients reaching the nearer of two gateways needed 51 s of air per session against 71 s.
+  At 40 sessions an hour, 99% were done (90% within 10 minutes), against 95% (44 minutes).
+  Busy time still equalled the sum of the sessions' air time: the two never worked in
+  parallel, because the gateways hear each other. More traffic needs better links or more
+  frequencies: Winlink's channel lists, or scanning.
+
+The conclusions survive dropping the capture rule (ALOHA does a little better; LBT the
+same). The model's limits:
+- interference is treated as noise;
+- fading is averaged into the frame table;
+- SNRs are random rather than propagated;
+- the busy detector is perfect above its threshold, with no false alarms;
+- there are no other users of the frequency (on amateur bands there will be, and the
+  detector must hear them too: §6).
+
+Proposed: listen before talk with a quiet period longer than any gap inside a session (4 s
+with these timings), a random back-off, and in-session turns that do not listen. Deferring
+on another session's HEAD stays an option, not the default.
+
+**Still to measure** before the link layer is specified, all of it needing radios or a
+third station:
+- the real turnaround;
+- a real busy detector (its misses, its false alarms, and other modes on the frequency);
+- a remembered rate gone stale.
 
 ## 8. Next steps
 
@@ -522,7 +693,7 @@ turnaround and the busy detector, which need radios and a third station.
    thing to read when B2F comes up.
 2. Done: the roll-off is a setting on both sides, 0.15 (span 16) is the default and costs
    nothing measurable (D5); wider settings need the `authorized` profile (D7).
-3. Started: `tools/arqsim.py`, selective-repeat ARQ sessions with B2F-shaped traffic (§7).
-   To finish: the measurements §7 lists as still to do.
+3. Done: `tools/arqsim.py`, selective-repeat ARQ sessions with B2F-shaped traffic, and
+   `tools/netsim.py`, many stations on one frequency (§7). What remains needs radios.
 4. Then write the modem program's milestones in PLAN.md: audio and keying, the host
    interface, the session layer, B2F, the TUI.

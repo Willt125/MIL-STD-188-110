@@ -17,6 +17,7 @@ Usage:
     python tools/arqsim.py sweep --param cap_s --traffic b2f bulk --snrs 6 18
     python tools/arqsim.py goodput --channel harsh
     python tools/arqsim.py compare --designs sr-grow sr-short --drift fall rise walk
+    python tools/arqsim.py session --design fd-limit --channel harsh --snr 18
 
 THE FRAME FORMAT IS A DRAFT FOR EXPERIMENTS (NETWORK.md D3; nothing is decided):
 
@@ -352,6 +353,18 @@ class Design:
     # Copies of the ACK frame per transmission: 2 puts a second one at the end, so a fade
     # over the first does not lose it while the data around it arrives.
     ack_copies: int = 1
+    # How a session starts (adaptive designs): "fixed" at start_rate, climbing one rung per
+    # report; "jump": the first report from each side may go straight to the rate its SNR
+    # supports (no losses seen yet to argue for caution); "remember": start at the rates
+    # the previous session with the same station ended on (here: a session just before, on
+    # the same conditions, so the best case); "remember-up": the same, but never below
+    # start_rate (memory only speeds the start).
+    start: str = "fixed"
+    # Never ask for a rate above this one while the receiver measures the channel fading
+    # faster than fading_limit_hz (Message.fading_hz; None: no such rule). 2400S loses
+    # most frames on the harsh channel's 5-Hz fading at any SNR (NETWORK.md §7).
+    fading_limit_hz: float | None = None
+    fading_ceiling: int = 1200
     description: str = ""
 
 
@@ -431,6 +444,58 @@ DESIGNS = {
             description="rt-poll, with a second copy of the ACK frame after the data",
         ),
         Design(
+            "st-jump",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            ack_copies=2,
+            start="jump",
+            description="rt-ack2, the first report jumping to the SNR's rate",
+        ),
+        Design(
+            "st-remember",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            ack_copies=2,
+            start="remember",
+            description="rt-ack2, starting at the rates the previous session ended on",
+        ),
+        Design(
+            "st-remember-up",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            ack_copies=2,
+            start="remember-up",
+            description="st-remember, but never starting below 1200S",
+        ),
+        Design(
+            "fd-limit",
+            rate=None,
+            cap_s=30.0,
+            settle_cap_s=10.0,
+            backoff=3,
+            start_rate=1200,
+            turns="master",
+            retry="poll",
+            ack_copies=2,
+            fading_limit_hz=3.0,
+            description="rt-ack2, never above 1200S while the fading measures over 3 Hz",
+        ),
+        Design(
             "sr-adapt-long",
             rate=None,
             interleave="long",
@@ -493,12 +558,16 @@ class Station:
     ceiling: int | None = None
     hold: int = 0
     backoff: int = 0
+    reported: bool = False  # has proposed a rate from a measurement yet
+    fading_hz: float | None = None  # the latest fading rate measured on the peer's signal
 
 
 class Link:
     """Two stations on one continuous channel, taking turns."""
 
-    def __init__(self, design: Design, snr_db, seed: int, channel=CHANNELS["moderate"]):
+    def __init__(
+        self, design: Design, snr_db, seed: int, channel=CHANNELS["moderate"], remembered=None
+    ):
         """``snr_db``: a number, or a schedule of dB against seconds (m110c.channel.schedule)."""
         self.d = design
         self.channel = TimeVaryingChannel(ChannelSpec(*channel), snr_db=snr_db, seed=seed)
@@ -507,6 +576,11 @@ class Link:
         self.sid = session_id(self.a.call, self.b.call)
         start = mode(design.rate or design.start_rate, design.interleave)
         self.a.data_mode = self.b.data_mode = start
+        if remembered:  # {station: the rate it sent at when the last session ended}
+            floor = design.start_rate if design.start == "remember-up" else 0
+            ra, rb = max(remembered["A"], floor), max(remembered["B"], floor)
+            self.a.data_mode = self.b.asked = mode(ra, "short")
+            self.b.data_mode = self.a.asked = mode(rb, "short")
         self.seconds = 0.0
         self.log = []
         self.timeouts = self.polls = self.unreadable = self.acks_missed = 0
@@ -517,8 +591,8 @@ class Link:
     def proposal(self, s: Station):
         if self.d.rate:
             return mode(self.d.rate, self.d.interleave)
-        if s.last_snr is None and s.last_delivered is None:
-            return mode(self.d.start_rate, "short")  # nothing heard yet: the starting rate
+        if s.last_snr is None and s.last_delivered is None:  # nothing heard yet
+            return s.asked or mode(self.d.start_rate, "short")
         if self.d.interleave == "long":
             return choose(s.last_snr, "long")
         current = s.asked.rate if s.asked else self.d.start_rate
@@ -527,8 +601,15 @@ class Link:
             i = rates.index(current) if current in rates else rates.index(600)
             return mode(rates[min(i + 1, len(rates) - 1)], "short")
         rate = choose_arq(s.last_snr, current, s.last_delivered, s.last_rate)
+        if self.d.start == "jump" and not s.reported and s.last_rate != 75:
+            estimate = s.last_snr + CAL_OFFSET_DB
+            rate = next(r for r, needed in ARQ_SHORT if estimate >= needed)
+        s.reported = True
         if self.d.backoff:
             rate = self._back_off(s, current, rate)
+        limit = self.d.fading_limit_hz
+        if limit is not None and s.fading_hz is not None and s.fading_hz > limit:
+            rate = min(rate, self.d.fading_ceiling)
         return mode(rate, "short")
 
     def _back_off(self, s: Station, current: int, rate: int) -> int:
@@ -588,6 +669,8 @@ class Link:
         got = parse(rx.process(y) + rx.finish(), self.sid)
         heard = bool(rx.messages)
         p.last_snr = rx.messages[0].snr_db if heard else None
+        if heard and rx.messages[0].fading_hz is not None:
+            p.fading_hz = rx.messages[0].fading_hz  # kept until a new reading replaces it
         p.last_rate = m.rate
         p.last_delivered = None  # unless DATA was sent (below)
         n_data = 0
@@ -620,6 +703,7 @@ class Link:
                 "understood": bool(got),
                 "poll": poll,
                 "snr": p.last_snr,
+                "fading_hz": p.fading_hz,
             }
         )
         return bool(got)
@@ -707,14 +791,20 @@ class Link:
 # --- experiments -------------------------------------------------------------------------
 
 
-def session_report(design: Design, snr: float, seed: int) -> None:
-    link = Link(design, snr, seed)
+def session_report(design: Design, snr: float, seed: int, channel_name="moderate") -> None:
+    channel = CHANNELS[channel_name]
+    link = Link(design, snr, seed, channel)
     r = link.run(b2f_turns(seed))
-    print(f"{design.name}: {design.description}; channel 2 paths 2 ms 1 Hz, {snr:g} dB")
+    print(
+        f"{design.name}: {design.description}; channel {channel[0]} paths {channel[1]:g} ms "
+        f"{channel[2]:g} Hz, {snr:g} dB"
+    )
     t = 0.0
     for e in link.log:
         t += TURNAROUND_S + e["seconds"]
         snr_txt = "unheard" if not e["heard"] else f"measured {e['snr']:.1f} dB"
+        if e["heard"] and e["fading_hz"] is not None:
+            snr_txt += f", fading {e['fading_hz']:.1f} Hz"
         print(
             f"  t={t:6.1f}  {e['from']}  {e['mode']:5s} {e['seconds']:5.1f} s  "
             f"data {e['received']}/{e['frames']}  ({snr_txt})"
@@ -793,7 +883,13 @@ def sweep_report(results) -> None:
 
 def compare_job(args):
     name, snr, seed, channel_name, traffic = args
-    link = Link(DESIGNS[name], condition(snr)(seed), seed, CHANNELS[channel_name])
+    design = DESIGNS[name]
+    remembered = None
+    if design.start.startswith("remember"):  # a session just before, same conditions
+        before = Link(design, condition(snr)(seed + 500), seed + 500, CHANNELS[channel_name])
+        before.run(TRAFFIC[traffic](seed + 500), max_transmissions=150)
+        remembered = {"A": before.a.data_mode.rate, "B": before.b.data_mode.rate}
+    link = Link(design, condition(snr)(seed), seed, CHANNELS[channel_name], remembered)
     return args, link.run(TRAFFIC[traffic](seed), max_transmissions=150)
 
 
@@ -858,7 +954,7 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     started = time.time()
     if args.experiment == "session":
-        session_report(DESIGNS[args.design], args.snr, args.seed)
+        session_report(DESIGNS[args.design], args.snr, args.seed, args.channel)
     elif args.experiment == "goodput":
         jobs = [
             (rate, "short", snr, 100 * k + 1, args.channel)

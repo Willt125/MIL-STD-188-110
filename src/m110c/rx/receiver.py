@@ -54,6 +54,9 @@ class Message:
     eom_found: bool = False
     lost: bool = False
     snr_db: float | None = None
+    # How fast the channel faded (fading bandwidth, Hz; EqualizingDemodulator.fading_hz),
+    # None if not measured (too short, or the M8 tracker).
+    fading_hz: float | None = None
     clock_ppm: float = 0.0
     end_sample: int = 0
     notes: list[str] = field(default_factory=list)
@@ -332,6 +335,7 @@ class Receiver:
         msg.eom_found = eom.found
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
         msg.clock_ppm = demod.clock_ppm
+        msg.fading_hz = getattr(demod, "fading_hz", None)
         msg.end_sample = self._message_end(demod, eom)
         if eom.found:  # measure the message only, not whatever followed it
             msg.snr_db = decoder.snr_db_before(data_phase_symbols(msg.mode, eom.payload_bits))

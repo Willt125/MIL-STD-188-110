@@ -188,3 +188,18 @@ def test_a_second_ack_copy_follows_the_data(monkeypatch):
     link.b.out.write(b"")
     link.transmit(link.b)  # nothing to send but the acknowledgement: one copy
     assert [k for k, _ in arq.parse(sent[-1], link.sid)] == ["HEAD", "ACK"]
+
+
+def test_fast_fading_keeps_the_rate_at_or_below_the_ceiling():
+    """Design.fading_limit_hz: while the receiver measures fast fading, it does not ask for
+    2400S however good the SNR; slow fading leaves the rule alone."""
+    link = arq.Link(arq.DESIGNS["fd-limit"], snr_db=25.0, seed=1)
+    s = link.a
+    s.asked, s.last_rate, s.last_delivered, s.last_snr = arq.mode(1200, "short"), 1200, 1.0, 20.0
+    s.fading_hz = 4.5
+    assert link.proposal(s).rate == 1200
+    s.fading_hz = 1.0
+    assert link.proposal(s).rate == 2400
+    s.asked, s.last_rate, s.last_delivered, s.last_snr = arq.mode(600, "short"), 600, 1.0, 4.0
+    s.fading_hz = 4.5
+    assert link.proposal(s).rate == 600  # below the ceiling the rule changes nothing

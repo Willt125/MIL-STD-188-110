@@ -315,6 +315,8 @@ def _describe(msg, sample_rate) -> str:
     else:
         end = "input ended, no EOM"
     snr = "n/a" if msg.snr_db is None else f"{msg.snr_db:.1f} dB"
+    if msg.fading_hz is not None:
+        snr += f", fading {msg.fading_hz:.1f} Hz"
     return (
         f"m110c-rx: {msg.mode} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
