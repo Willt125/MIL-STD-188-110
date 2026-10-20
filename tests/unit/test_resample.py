@@ -164,3 +164,41 @@ def test_spectrum_inversion_is_applied_once_when_resampling():
     out = Receiver(sample_rate=8000, invert_spectrum=True)
     got = out.process(np.conj(np.concatenate([x, np.zeros(800, complex)]))) + out.finish()
     assert got == msg
+
+
+# --- the fractional resampler (a sound card's clock error, --tx-ppm) --------------------
+
+
+@pytest.mark.parametrize("ratio", [1.0, 1 + 50e-6, 1 - 200e-6, 1.01])
+@pytest.mark.parametrize("f", [300.0, 1800.0, 3300.0])
+def test_fractional_resampling_keeps_tones_exact(ratio, f):
+    """A tone comes out as the same tone at the new rate: the samples played by a card whose
+    clock runs ratio times fast are the tone at the intended frequency."""
+    x = tone(f, 9600, 2.0)
+    r = R.FractionalResampler(ratio, 9600)
+    y = np.concatenate([r.process(x), r.flush()])
+    assert y.size == int(np.ceil(x.size * ratio))
+    expected = np.exp(2j * np.pi * f / ratio * np.arange(y.size) / 9600)
+    assert np.max(np.abs(middle(y) - middle(expected))) < 3e-4
+
+
+@settings(max_examples=25, deadline=None)
+@given(st.lists(st.integers(1, 3000), min_size=1, max_size=8))
+def test_fractional_resampling_does_not_depend_on_chunking(cuts):
+    x = tone(1234.5, 9600, 1.0) * np.linspace(0.2, 1, 9600)
+    whole = R.FractionalResampler(1 + 37e-6, 9600)
+    reference = np.concatenate([whole.process(x), whole.flush()])
+    r = R.FractionalResampler(1 + 37e-6, 9600)
+    out, at = [], 0
+    for n in cuts:
+        out.append(r.process(x[at : at + n]))
+        at += n
+    out += [r.process(x[at:]), r.flush()]
+    assert np.allclose(np.concatenate(out), reference, atol=1e-12)
+
+
+def test_fractional_resampling_memory_stays_bounded():
+    r = R.FractionalResampler(1 - 100e-6, 48000)
+    for _ in range(50):
+        r.process(np.ones(4800, complex))
+    assert r._x.size < 100

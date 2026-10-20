@@ -93,7 +93,10 @@ laptop 2 headphone out ──[pad 20-40 dB]──> laptop 1 mic in     (second c
   margin.
 
 **Run:**
-- every mode, both directions, `m110c-modem` on each side;
+- every mode, both directions, `m110c-modem` on each side, e.g.
+  `m110c-modem --audio --callsign N0CALL --chat --rate 1200` on both laptops, typing on
+  one and reading on the other (`--list-audio` names the cards; `--levels 2` shows the
+  input level while you set it);
 - an hour of continuous reception: memory, dropped buffers, clock offset over time;
 - a 10-minute message;
 - then sessions (P5);
@@ -130,7 +133,10 @@ laptop 2 headphone out ──[pad 20-40 dB]──> laptop 1 mic in     (second c
 card's mic input is used.
 
 **Run:**
-- each keying method;
+- with one card's output cabled to its own input (through the pad),
+  `M110C_AUDIO_LOOPBACK=<card> pytest tests/acceptance/test_benches.py -s`: every mode out
+  and back, full duplex;
+- each keying method (P3);
 - the watchdog: hold a transmission past its limit and check the line drops;
 - pull the USB cable mid-transmission;
 - to time keying against the audio, record the LED with the laptop's camera, or wire RTS
@@ -187,6 +193,11 @@ same attenuators, at an HF frequency. This tests the LimeSDR's HF path. The two 
 share one reference clock, so there is no clock offset to follow.
 
 **Run:**
+- `M110C_SDR_LOOP="driver=lime;driver=rtlsdr" M110C_SDR_DIAL=915e6 pytest
+  tests/acceptance/test_benches.py -s` (the LimeSDR at 960 kS/s, the RTL-SDR at 240 kS/s,
+  both at the bench level); or by hand, `m110c-modem --sdr driver=rtlsdr --dial 915e6
+  --sdr-tx off` listening while `m110c-modem --sdr driver=lime --sdr-rate 960000 --dial
+  915e6 --callsign N0CALL --chat` sends;
 - every mode;
 - a sweep of transmit gain to find where the signal is clean and where it starts to
   distort;
@@ -220,7 +231,8 @@ these recordings.
 - terminate the transmit ports, and keep the modem's transmitter off (receive-only SDR
   device).
 
-**Run:** recordings of 10-60 minutes each, as I/Q or audio with the frequency, time and
+**Run:** recordings of 10-60 minutes each (the SDR device's receive side, P1, or the
+LimeSDR's own tools), as I/Q or audio with the frequency, time and
 band conditions noted. Wanted:
 - quiet bands at night and by day;
 - crowded segments: FT8 (for example 14.074 MHz), RTTY contests, PSK31;

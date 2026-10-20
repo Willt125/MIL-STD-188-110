@@ -755,3 +755,83 @@ its filter spanning 16 symbols each side, and the receiver's filters to 0.15 (IN
 docs/NETWORK.md, D5 and D7). Every measurement above this section, and CONFORMANCE.md, was
 made with the earlier default, 0.25 with span 8; the comparison above says the difference
 does not matter to this receiver, but the tools now rerun at the new default.
+
+## P1: gaps in the input, from a sound card that drops samples (2026-10-20)
+
+A program reading a sound card can fall behind, and the card then drops input. The modem
+program (PLAN.md P1) was measured on what that does to a message in progress: 8 s messages,
+noise only, one 0.1-s block of input lost 4 s in. Bytes wrong (of all sent), and how the
+message ended:
+
+| Mode | Block lost (a jump in time) | Block repeated | Block replaced by zeros |
+|---|---|---|---|
+| 2400S | 1500 of 2400; signal lost | 1500 of 2400; signal lost | 0 |
+| 1200S | 750 of 1200; signal lost | 750 of 1200; signal lost | 0 |
+| 600L | 0; lost, then a second message from a later preamble segment | the same | 0 |
+| 75S | 47 of 75; signal lost | 47 of 75; signal lost | 0 |
+
+A jump in time (or a block delivered twice) moves every later symbol a tenth of a second
+away from where the demodulator expects it, and it never finds them again. Zeros in place
+of the lost samples keep the time base: the receiver sees a short fade. So the station's
+input buffer (`audio.InputRing`) replaces what it drops with zeros, and counts it (a
+`Fault` event, "overrun"). A gap reported by the sound card's driver without a count cannot
+be repaired this way; a dropped USB transfer from an SDR can be, if its driver says how
+much.
+
+### 2400 bps turned its data upside down after a gap
+
+With zeros, most gaps cost nothing: 1200S, 600S, 150S, 75S and long interleave came through
+gaps of 0.02-0.5 s with at most the bytes under the gap damaged (1200S and 600S lost a few
+dozen bytes to 0.5 s; 2400L, 75L nothing). But 2400S lost the rest of the message after a
+gap of 20-50 ms at every one of six positions tried, and of 100 ms at three of six (10 ms
+never): about 900-1070 of 2400
+bytes, with the end-of-message found and the right length.
+
+The trace showed why. The bits after the gap were about 90% wrong: *inverted*, which the
+convolutional code passes straight through (both generators have odd weight), so the EOM
+was still found once it ended. In the data phase each frame's channel estimate is fitted to
+the frame's decided data and its probe together, 32 decided symbols to 16 known at 2400S.
+The frame straddling the gap gave an estimate turned by 180 degrees; the next frame's
+tentative decisions, made with it, came out turned by 180 degrees too, agreed with it, and
+outvoted the probe: the same again, frame after frame. The fit showed it (a share of signal
+of about 0.2, against 0.999 before the gap), and so did the carrier loop, which took the
+jump for half a hertz of frequency. The lock lasted until that frequency error drifted it
+free, about 3 s later.
+
+**The fix: the probe has the last word on the phase** (`EqualizingDemodulator._anchor_phase`).
+When a data frame's fit is poor (below 0.5), its probe alone is correlated with the
+received samples; if that says the estimate is turned by 90 degrees or more (a multiple of
+45: the ambiguity 8-PSK decisions can fall into) and correlates well (at least 0.5), the
+estimate is turned back before the frame's decisions are committed. The message notes how
+often it happened. Measured (twelve 20-s messages each, the same channels before and after):
+
+| Channel | Before | After |
+|---|---|---|
+| 2400S, noise, a 50-ms gap at twelve positions | 36,436 bits wrong in 6 messages | none |
+| 2400S, 2 paths 2 ms 5 Hz, 25 dB | 421 bits wrong (11 messages) | the same |
+| 2400L, 2 paths 2 ms 5 Hz, 30 dB | 5 (1 message) | the same |
+| 1200S, 600S, 1200L and 2400S on 1-5 Hz fading | | the same |
+
+Two other rules were tried and dropped: correcting turns of 45 degrees as well (on 2400S at
+5 Hz, the probe in a deep fade was as often wrong as right: 610 bits instead of 421), and
+guarding the carrier loop against jumps (the frequency stayed put, but the decisions stayed
+inverted: the loop was a symptom, not the cause). The quick conformance run (`--quick`) was
+unchanged but for the noise of one channel per row.
+
+### Keeping up
+
+The station, receiving through a virtual device (noise at 34 dB below the signal, one
+2.6-GHz core, the full test suite running alongside): seconds of processing per second of
+signal.
+
+| 4800S | 2400S | 2400L | 1200S | 600S | 150S | 75S | 75L | noise only | noise, late entry on |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.19 | 0.23 | 0.18 | 0.24 | 0.25 | 0.20 | 0.09 | 0.08 | 0.06 | 0.27 |
+
+A test holds it under 0.75 for three modes (`tests/unit/test_station.py`; set
+`M110C_SKIP_TIMING` on a very slow machine). The transmitter keeps a second of output queued
+ahead of the sound card, so a slow moment of the receiver's does not starve it.
+
+One measurement pitfall worth keeping: a process pool reuses its workers, so a variant set
+by changing module constants in one job stays set for the next jobs in that process. Every
+job must set every constant it depends on.

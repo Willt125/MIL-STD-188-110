@@ -336,6 +336,10 @@ class Receiver:
         msg.lost = demod.lost and not eom.found  # silence after a complete message is not a loss
         msg.clock_ppm = demod.clock_ppm
         msg.fading_hz = getattr(demod, "fading_hz", None)
+        if getattr(demod, "phase_corrections", 0):
+            msg.notes.append(
+                f"phase: {demod.phase_corrections} channel estimate(s) turned back by the probe"
+            )
         msg.end_sample = self._message_end(demod, eom)
         if eom.found:  # measure the message only, not whatever followed it
             msg.snr_db = decoder.snr_db_before(data_phase_symbols(msg.mode, eom.payload_bits))
