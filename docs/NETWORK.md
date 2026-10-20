@@ -161,8 +161,35 @@ meaning of `2000`.
 Receiving is not limited by either profile. **Encryption (2026-10-20): `authorized` only,
 to be designed later.** Amateur rules forbid it, so the amateur profile never offers it;
 services such as MARS and SHARES may permit or require it. Nothing is designed yet: which
-layer it belongs to, which algorithms, key management, and how its absence is guaranteed in
-the amateur profile (a build without it, or a refusal at run time) are open questions.
+layer it belongs to, which algorithms, key management are open questions.
+
+**How the amateur profile is guaranteed: two builds [PROPOSED, 2026-10-20].** The user's
+proposal: amateur and authorized as a build-time switch, so that an amateur copy does not
+contain what amateurs may not use. The split comes at one place in the code:
+
+- *Capabilities amateurs may never use* (encryption first; anything else of that kind
+  later) live in their own modules, left out of the amateur build entirely. A
+  misconfiguration, a command-line flag or a host command cannot reach code that is not
+  there. "This build contains no encryption" can then be checked once, by inspecting it.
+  It may also keep the amateur build clear of export-control questions about encryption
+  software (to be checked, not assumed).
+- *Limits on settings both profiles share* (roll-off, bandwidth through the host
+  interface, identification, automatic operation) stay in the profile table (D7). The
+  amateur build contains the amateur profile only, so there is no `authorized` profile in
+  it to select.
+- *Where:*
+  - in the C port (PLAN.md S6), one build option, read in one file;
+  - in Python, the `authorized` capabilities as a separate package that a default
+    install never contains, with the runtime profile kept for the shared limits;
+  - CI builds and tests both variants;
+  - no build-time conditionals scattered through the modem.
+
+What it does not do, and the documentation will say so: the source is public and
+MIT-licensed, so anyone can build the other variant. The switch prevents accidents and
+misconfiguration, not deliberate misuse; responsibility stays with the operator (D1, D7).
+Nor can any build hold a transmitter within 2.8 kHz when its drive is too high. Amateur
+rules also differ between countries: the amateur profile's limits are US rules for now,
+and other jurisdictions may need settings of their own within the amateur build.
 
 ## 5. ARDOP, checked against 110
 

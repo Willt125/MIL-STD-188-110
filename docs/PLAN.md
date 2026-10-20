@@ -332,6 +332,15 @@ that change, `tools/toystack.py` for link-layer experiments.
   receiver in about 4% of receptions (11 of 288). Async framing finds its own
   characters where a block is not whole bytes (300, 150, 75 bps, zero or short).
 - **S6**: C99 port, using the Python golden vectors as its oracle.
+  **[PROPOSED, 2026-10-20]** Amateur and authorized as a build-time choice (NETWORK.md D7,
+  "How the amateur profile is guaranteed"):
+  - one build option, read in one file;
+  - the amateur build leaves out capabilities amateurs may never use (encryption first),
+    and contains only the amateur profile's limits;
+  - both variants built and tested in CI;
+  - the rest of the code free of build-time conditionals.
+
+  It prevents accidents and misconfiguration, not deliberate misuse: the source is public.
 - **S7**: Appendix B (39-tone legacy) and Appendix D (WBHF).
 - **S8**: host interfaces and a link layer.
   - The Appendix A LAN interface (TCP and UDP, data and remote control). It is part of 110C
