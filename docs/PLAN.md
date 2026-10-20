@@ -53,6 +53,9 @@ Status: **accepted** (2026-10-11). Decisions recorded as **[DECIDED]**.
 - Appendix A (TCP/UDP modem control), RTS/CTS/radio keying, remote control (§5.3.1.5).
 - Real-time sound-card I/O. We read and write sample streams; the user can pipe to `aplay`,
   `sox`, GNU Radio, an SDR, and so on.
+
+  (Non-goals for v1.0 only: real-time audio, keying and the host interfaces are the modem
+  program after it, §6, milestones P1-P8.)
 - The optional appendices (B: 39-tone, C: 3200–9600 bps, D: wideband, F: multi-channel). They
   are listed as stretch milestones in §6. **[DECIDED]** v1.0 covers the §5.3.2 serial-tone
   section only; Appendix C is a stretch goal.
@@ -289,8 +292,8 @@ against Table XVI.
 ## 6. Stretch milestones (post-1.0)
 
 **Order (agreed 2026-10-15).** The serial-tone stretch goals first: S4 (done), then S3 (done), then S5 (done).
-Then the modem program (milestones to be written after the network-stack discussion,
-docs/NETWORK.md):
+Then the modem program, milestones P1-P8 below (written 2026-10-20, after the network-stack
+discussion and prototypes in docs/NETWORK.md):
 real-time audio I/O and radio keying, the host interfaces and network stack (S8), a TUI.
 Then the appendix modes: S1, then S7. S2 is reclassified: the acceptance tests already run
 on the third-party recordings locally (`M110C_RECORDINGS`), and a CI version needs
@@ -467,6 +470,112 @@ Receiver weaknesses found by the sweep (`tools/sweep.py`, 2026-10-14), both fixe
   frame, would fix it; to be measured first.
 
 
+### The modem program: milestones P1-P8
+
+**[PROPOSED]** Written 2026-10-20 from docs/NETWORK.md (decisions D1-D7; the prototypes of
+§7). It turns the two filters (`m110c-tx`, `m110c-rx`) into a station: a modem that runs
+continuously on a sound card, keys a radio, holds ARQ sessions with other stations, and
+serves Winlink clients through a host interface compatible with ARDOP's. The end point is
+a Winlink message passed between two stations running this modem, by Pat on both sides,
+over the air.
+
+**What it is for, and what it is not.** Amateur first and legal by default (D1, D7): the
+amateur profile is where every limit is enforced, and every milestone that adds a way to
+transmit adds its limits there. The serial-tone modem underneath is unchanged except where
+a milestone says so. Nothing here is STANAG 5066 (§6, S8).
+
+**Architecture [PROPOSED]:**
+
+- *One program, `m110c-modem`*, a long-running station process: an asyncio event loop
+  owns the state (sessions, queues, keying, host connections). Audio arrives and leaves
+  through ring buffers filled and drained by the audio library's own thread. The receiver
+  (0.1-0.4 s of one core per second of signal, M12) runs in a worker thread so the loop
+  never waits on it. The existing CLIs stay as they are: filters for files and pipes.
+- *Every device behind an interface, with a fake for tests:* audio (sound card, file or
+  pipe, virtual air), keying (none or VOX, serial RTS/DTR, Hamlib's `rigctld` over TCP, the
+  host's `PTT` lines), the clock (real, or virtual for tests that run faster than real time
+  and repeat exactly).
+- *New packages:*
+  - `m110c/station/`: event loop, configuration, the transmit queue;
+  - `m110c/audio/`;
+  - `m110c/keying/`;
+  - `m110c/link/`: frames, ARQ, sessions, broadcast;
+  - `m110c/host/`: ARDOP-compatible, later KISS and Appendix A;
+  - `m110c/tui/`;
+  - `rx/busy.py`.
+- *Dependencies stay optional extras;* the core stays NumPy only:
+  - `audio`: `sounddevice`, MIT, over PortAudio, MIT;
+  - `keying`: `pyserial`, BSD;
+  - `tui`: the TUI library, below.
+
+  Hamlib is reached only through its daemon's documented TCP protocol, never linked or
+  copied.
+- *Configuration:* one TOML file (stdlib `tomllib`) holding the profile, callsign, grid,
+  devices and keying. Command-line options override it.
+- *Platforms:* Linux first (CI). Windows and macOS through the same libraries. Windows is
+  needed for the Winlink Express check (NETWORK.md §6), so it is supported, not just
+  hoped for.
+
+**Testing [PROPOSED].** CI has no radio, so everything above the sound card is tested
+through fakes and the virtual air (P2), and runs in CI like the rest of the suite.
+Hardware is checked by hand, by the user, against an acceptance list kept in a new
+`docs/ONAIR.md`. Each list says:
+- what was run;
+- on which radio and interface;
+- what was measured;
+- the date.
+
+As with the recordings (`M110C_RECORDINGS`), tests that need something we cannot ship are
+opt-in through an environment variable: a Pat binary (`M110C_PAT`), or a sound card with a
+loopback cable (`M110C_AUDIO_LOOPBACK`). Third-party programs are installed and run by the
+user, never fetched by the test suite.
+
+| # | Milestone | Deliverable | Key tests |
+|---|-----------|-------------|-----------|
+| **P1** | Real-time core and audio | `m110c-modem` receiving continuously from a sound card and transmitting what is queued (a file, a line typed, a pipe), with live diagnostics: per message the mode, SNR, fading rate, clock and carrier offsets; input level, clipping, under- and overruns. Any card rate through the S3 resampler (48 kS/s typical). Two candidates from M12, now needed: `--tx-ppm` (sound cards are often tens of ppm off; 110C allows ±10 ppm, §4.2.1) and a drive-level setting | Same bytes and diagnostics as `m110c-rx` on the same samples, whatever the buffer sizes (the chunk-invariance tests, now through the event loop and a virtual clock); dropped and repeated buffers injected, the effect measured and documented; processing time per second of signal for every mode (a CI budget, skipped on slow runners); clean shutdown with nothing left keyed or queued. Manual: two sound cards and a cable, every mode both ways (`M110C_AUDIO_LOOPBACK`) |
+| **P2** | Virtual air | `m110c-air`: a server that several `m110c-modem` processes connect to as their sound card. A Watterson channel (Appendix E, `TimeVaryingChannel`) and an SNR per pair of stations, signals summed at each receiver, half duplex enforced through each station's keying state. Real time, for running real hosts against it; or on a shared virtual clock, faster than real time and exactly repeatable, for tests | Two stations pass every mode with the results of `m110c-chan` (same channel, same seed); two transmitters overlapping at one receiver damage each other as their power ratio says; a keyed station hears nothing; a pair set to -inf dB never hears each other (hidden stations). This is netsim's model made real, so its numbers are rechecked here at a few points (NETWORK.md §7) |
+| **P3** | Keying and on-air timing | `m110c/keying/`: VOX (no keying line), serial RTS/DTR, `rigctld`, and host-keyed (`PTT TRUE\|FALSE` to the host, for P6). Lead and tail times. A transmit watchdog: the radio is unkeyed after a hard maximum (45 s against the 30-s cap) or if the audio stops, whatever the program is doing. `tools/turnaround.py`, which measures keying latency and turnaround with a second receiver | Fakes for a serial port and a `rigctld` server: the order and timing of key, audio and unkey on the virtual clock; the watchdog fires; a device that disappears leaves the radio unkeyed. VOX clips the start of the preamble, so how much of a short preamble may be lost: acquisition measured with the first 0-400 ms removed, on the Table XVI channels. Manual: latency and turnaround of each method on the user's radios, recorded in ONAIR.md; this settles NETWORK.md §6's keying question and arqsim's assumed 0.5 s |
+| **P4** | Busy detector | `rx/busy.py`: occupancy of the passband against a tracked noise floor, joined with the 110 detectors (preamble search, the late-entry probe search) for 110 signals; busy and clear with the quiet period of NETWORK.md §7 (4 s with the measured timings) and a random back-off | False alarms on noise (hours of it, simulated) below a stated rate; detection probability against SNR for 110 and for other signals synthesised as stand-ins (a carrier, FSK, a multi-tone OFDM-like signal, speech-shaped noise bursts); the quiet-period logic on the virtual clock; netsim rerun with the measured detection curve in place of its assumed thresholds. Manual: recordings of real band noise and other modes (the user's), to check the stand-ins |
+| **P5** | Link layer: specification and implementation | `docs/LINK.md`, our own short specification (required for amateur use, D1). It turns arqsim's draft into a protocol: frame format with a version, session ID (ARDOP's idea: a hash of both callsigns), connect and disconnect, ID frames, broadcast. Rules as measured in NETWORK.md §7: selective repeat, 200-byte frames, a 10-s cap until the rate settles then 30 s, rates from the SNR report with back-off, the fading cap, the remembered start, master turns, timeouts and polls, the ACK sent twice. Identification: callsigns in every transmission, an ID frame every 10 minutes and at the end. `m110c/link/`: the state machine with ARDOP's states (D3). Amateur profile: no callsign, no transmission; no automatic answering unless enabled, and a visible notice when it is. Committed test vectors; arqsim's tests ported as the specification's tests | Frame vectors (encode, decode, every field, damage); the state machine against scripted outcomes, as in `tests/unit/test_arqsim.py` (timeouts, polls, give-up, duplicate and lost ACKs); the closing handshake, which arqsim never modelled; sessions over the virtual air on the moderate and harsh channels, within the spread of arqsim's results (the prototype is the oracle); collisions and refusals while busy with three stations; the profile's refusals |
+| **P6** | Host interface compatible with ARDOP's | `m110c/host/ardop.py`: the TCP command and data ports, with the behaviour NETWORK.md §5 found in Pat (every command answered or `FAULT`ed, `BUFFER` after each write, chunks of at most 1 kB, `TARGET` before `CONNECTED`, the `ARQBW` answers of D6, `IDF` data, `PTT` and `BUSY` lines). Documented as compatible with ARDOP's host interface, never as ARDOP (D4) | Protocol tests that replay the command sequences of §5 against the modem (written from the behaviour list, not from Pat's code) and check every reply; a fake host that holds whole sessions over the virtual air. Opt-in (`M110C_PAT`): two Pat instances, peer to peer, pass a B2F message through two modems over the virtual air, on the moderate and harsh channels and at 75 bps (NETWORK.md §6: whether Pat's 30-s closing timeouts cut a slow session). Manual: Winlink Express (Windows), and Pat to Pat over the air. **→ v2.0: a Winlink message between two stations running this modem** (D2, levels 1 and 2) |
+| **P7** | TUI | `m110c-tui`, a front end to `m110c-modem` (or its own station): a text waterfall, the receive log with each message's diagnostics, session state and queues, busy and PTT indicators, the profile always visible (the `authorized` notice in a banner, D7), keyboard-to-keyboard chat (over an ARQ session or broadcast), sending a file, settings | The model behind the screen tested without a terminal; screens tested headless (snapshots); every action reachable without a mouse; no state the modem does not also report through its own interfaces |
+| **P8** | More interfaces and clients | The rest of S8, in this order unless a use asks otherwise: broadcast for bulletins (D3; FEC with repeats, `FEC` and `ERR` data); KISS over TCP and a pipe; the Appendix A LAN interface (110C's own, data and remote control); file transfer | Per interface, as P6: a replayed exchange, then a host over the virtual air |
+
+**Decisions to take before P1 [PROPOSED, for the user]:**
+
+- *TUI library:* Textual (MIT, Windows included, headless testing built in) or curses
+  (standard library, no Windows, nothing to install). Proposed: Textual, as the `tui`
+  extra.
+- *B2F of our own:* not needed for Winlink. Pat implements B2F and drives the modem
+  through P6, which covers D2's levels 1 and 2. That peer-to-peer mode (Pat's `connect`
+  and `listen` over ARDOP) is to be confirmed in Pat's code when P6 starts. Our own B2F
+  client would only let the TUI send mail without Pat. Proposed: not planned until a use
+  asks for it.
+- *The carrier at 1800 Hz or 1500 Hz* (NETWORK.md §5, [OPEN]): needed by P6, decidable
+  once P3 has measured the passband of a real transmitter.
+
+**Ordering rationale:**
+
+- **The real-time core first**, because every later milestone runs inside it.
+- **The virtual air second**, before keying. It is the test bench for everything above it,
+  and it needs no radio, so the link layer and host interface never wait on hardware.
+- **Keying and the busy detector before the link layer:** P3's measured turnaround and
+  P4's measured detection replace the two assumptions the prototypes rest on.
+- **The host interface after the link layer**, because it only exposes what the link
+  layer does. Pat then tests both at once.
+- **The TUI late:** the modem must be usable from Pat, scripts and the command line first.
+  A screen over an unsettled core would be rewritten.
+
+**Hardware acceptance (manual, the user's; recorded in docs/ONAIR.md):**
+- P1: audio through two sound cards and a cable.
+- P3: keying latency and turnaround per method and radio.
+- P3: the transmitted spectrum at -26 dB at roll-off 0.15 on a real transmitter (D5;
+  an SDR or a spectrum analyser on a dummy load).
+- P4: band noise and other modes.
+- P6: Pat to Pat over the air, and Winlink Express.
+
+Gateways (D2, level 3) remain up to gateway operators.
+
 ### The network stack: agenda for a discussion before the modem program
 
 **Discussed 2026-10-19: see [NETWORK.md](NETWORK.md)** for the goals, the decisions (amateur
@@ -526,3 +635,7 @@ Questions to bring to it:
 | Mis-transcribed tables | Double entry plus the derived-quantity cross-checks in M1 |
 | Our channel simulator flatters our receiver (same author, same reading of Appendix E) | E.7 checks (M9); receiver results repeated on PathSim 1.0's independently written fading process (VALIDATION.md). A shared misreading of Appendix E itself remains possible; the real recordings are the check against that |
 | Settings both ends must agree on but the waveform does not announce (sync vs async framing, bit order) | Defaults follow the real recordings (INT-016, INT-025); documented as operator settings |
+| Modem program: audio timing in Python (garbage collection, a busy machine) drops or delays buffers | The audio library's thread only moves samples through ring buffers; drops are counted and reported, their effect measured (P1); the transmit watchdog unkeys whatever happens (P3) |
+| Modem program: a radio left keyed, or keyed without identification | Watchdog independent of the event loop (P3); no transmission without a callsign in the amateur profile (P5); faults unkey before anything else |
+| Modem program: hosts behave unlike their documents (ARDOP's host interface is "Rev 0.2"; Winlink Express cannot be read) | P6 follows what Pat does (NETWORK.md §5, at a recorded commit), tested by replaying it and against Pat itself; Winlink Express checked by hand |
+| Modem program: hardware cannot be tested in CI | Every device behind an interface with a fake; the virtual air (P2) for everything above the sound card; manual acceptance recorded in docs/ONAIR.md |

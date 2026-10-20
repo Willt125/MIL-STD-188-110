@@ -2,7 +2,8 @@
 
 Record of the network-stack discussion (2026-10-19) that PLAN.md §6 scheduled before the
 modem program. It replaces that agenda as the place where the stack's direction is kept.
-Milestones come after the open questions in §6 below are settled.
+The modem program's milestones (P1-P8, 2026-10-20) are in PLAN.md §6; the open questions in
+§6 below are settled by the milestones that name them.
 
 Status labels as in PLAN.md: **[DECIDED]**, **[PROPOSED]**, **[OPEN]**.
 
@@ -695,5 +696,6 @@ third station:
    nothing measurable (D5); wider settings need the `authorized` profile (D7).
 3. Done: `tools/arqsim.py`, selective-repeat ARQ sessions with B2F-shaped traffic, and
    `tools/netsim.py`, many stations on one frequency (§7). What remains needs radios.
-4. Then write the modem program's milestones in PLAN.md: audio and keying, the host
-   interface, the session layer, B2F, the TUI.
+4. Done: the modem program's milestones, P1-P8, in PLAN.md §6: real-time core, virtual
+   air, keying, busy detector, link layer (docs/LINK.md), the host interface, the TUI, more
+   interfaces. Our own B2F is not among them: Pat brings it (P6).
