@@ -370,31 +370,56 @@ summing at RF.
 - quarter-inch and 3.5 mm cables to suit each interface;
 - audio isolation transformers (one per path to the main computer), only if hum appears.
 
-**G2, the matrix box.** One summing node per receiver, fed by the two *other* stations
-through their own path pot. A pot is that path's loss; fully down, the pair is hidden from
-each other. (No self path: it is not needed, and leaving it out lets a station run full
-duplex for tests without hearing itself.)
+**G2, the matrix box.** One summing node per receiving station, fed by the two *other*
+stations, each through its own path: a pot that sets the path's loss, and a switch that
+breaks it. The two 10 kΩ resistors into a node are the mixer; the node goes straight to
+that station's receive input, with no further mixing (a final mixer would make every
+station hear the same sum again: that is G1). No self path: it is not needed, and leaving
+it out lets a station run full duplex for tests without hearing itself.
 
 ```
-            to R1 input             to R2 input             to R3 input
-               ^                       ^                       ^
-             node1                   node2                   node3
-           (1 k to gnd)            (1 k to gnd)            (1 k to gnd)
-            ^       ^               ^       ^               ^       ^
-          10 k    10 k            10 k    10 k            10 k    10 k   summing resistors
-            |       |               |       |               |       |
-          P21     P31             P12     P32             P13     P23    10 k audio-taper pots,
-            |       |               |       |               |       |    wired as dividers to gnd
-           T2      T3              T1      T3              T1      T2    (Pjk: Tj's path to Rk)
+       station 1's RX input     station 2's RX input     station 3's RX input
+         (jack R1)                (jack R2)                (jack R3)
+            ^                        ^                        ^
+          node 1                   node 2                   node 3
+        (1 k to gnd)             (1 k to gnd)             (1 k to gnd)
+          ^      ^                 ^      ^                 ^      ^
+        10 k   10 k              10 k   10 k              10 k   10 k     summing resistors
+          |      |                 |      |                 |      |
+        S21    S31               S12    S32               S13    S23      path switches (SPST)
+          |      |                 |      |                 |      |
+        P21    P31               P12    P32               P13    P23      10 k audio-taper pots,
+          |      |                 |      |                 |      |      wired as dividers to gnd
+          T2     T3                T1     T3                T1     T2
 
-T1, T2, T3: the stations' outputs (each feeds two pots). All grounds common.
+Tj: station j's TX output (jack Tj), feeding its two pots. Pjk and Sjk: the path from
+station j to station k. All grounds common.
 ```
 
-Parts: six 10 kΩ audio-taper (logarithmic) potentiometers, six 10 kΩ and three 1 kΩ
-resistors, three input and three output jacks to suit the cables, a small metal box,
-hookup wire: about $20-35. Passive summing loses level (on the order of 20 dB with these
-values), which the receiving interfaces' gain makes up; the UMC22's line output is much
-hotter than a Digirig's, so its pots run lower (or add a pad on its two paths).
+Each station plugs into the box twice:
+
+```
+station 1 (laptop + interface)
+   TX audio out ──> jack T1 ──> P12, S12 (to station 2) and P13, S13 (to station 3)
+   RX audio in  <── jack R1 <── node 1: P21, S21 (from station 2) + P31, S31 (from station 3)
+```
+
+**A pot alone cannot hide a pair; the switch can.** Fully down, a pot still passes its end
+resistance's share: a few ohms to tens of ohms of 10 kΩ, so the path is only about
+46-70 dB below fully up. With clean converters that may still be well above the receiving
+interface's noise floor (for example, a path at -10 dBFS turned 46 dB down arrives at
+-56 dBFS, decodable over a floor near -90 dBFS; the receiver finds preambles at about -9 dB
+SNR). An open switch breaks the path; what remains is stray coupling through wiring and
+the shared ground, expected 80 dB or more down. Pots set the levels; switches make pairs
+hidden. (A pull-down at the wiper would not help: the wiper never floats, and a resistor
+there would only load the pot and bend its taper.)
+
+Parts: six 10 kΩ audio-taper (logarithmic) potentiometers, six small SPST toggle switches,
+six 10 kΩ and three 1 kΩ resistors, three input and three output jacks to suit the cables,
+a small metal box, hookup wire: about $25-40. Passive summing loses level (on the order of
+20 dB with these values), which the receiving interfaces' gain makes up; the UMC22's line
+output is much hotter than a Digirig's, so its pots run lower (or add a pad on its two
+paths). Build it on a breadboard first and check the levels before boxing it up.
 
 **Setup:**
 - Run the laptops on battery. If hum appears with the main computer on mains power, put
@@ -404,6 +429,8 @@ hotter than a Digirig's, so its pots run lower (or add a pad on its two paths).
   --callsign N0CALL --send ...`); the other two note the level (`--levels 1`) and the
   SNR reported. Write down the matrix of levels in dB; set the pots (or faders) for the
   test, and record the settings.
+- **Each receiver's noise floor:** with nothing sent, note each station's input level. A
+  path is hidden only if what leaks through it lies well below this (the hiding margin).
 - Noise, if wanted: G1, a fourth mixer channel playing noise from any source; G2 runs on
   the interfaces' own noise floor, so the pots set signal-to-interference rather than SNR.
 
@@ -417,13 +444,17 @@ hotter than a Digirig's, so its pots run lower (or add a pad on its two paths).
    both?
 3. *Listen before talk* (P4): stations that hear each other defer; count the collisions
    left against netsim's figures.
-4. *Hidden stations* (G2): turn the pots between stations 1 and 2 fully down, both still
-   reaching station 3. Listen before talk no longer protects them; compare with netsim.
+4. *Hidden stations* (G2): first check the pair is really hidden: open the switches between
+   stations 1 and 2 (S12 and S21), send from each, and confirm the other reports nothing
+   (no preamble found, no change on `--levels`); note any residual. Then, with both still
+   reaching station 3, run listen before talk: it no longer protects them; compare with
+   netsim.
 5. *Sessions with an interferer* (P5): a session between stations 1 and 3 while station 2
    sends at random.
 
 **Record:**
-- the level matrix and the pot or fader settings;
+- the level matrix, the pot or fader settings and which switches are open;
+- each receiver's noise floor, and the residual level of each opened path;
 - for each collision: relative level, overlap, what was decoded, bytes damaged;
 - the level difference at which the stronger signal survives (capture), for comparison
   with netsim's assumption;
@@ -447,7 +478,7 @@ Prices are rough, from listings of varying age (2026-10); check before buying.
 | Now | D | Mini-Circuits VAT-10+, VAT-20+, VAT-30+; RG316 SMA cables; 50 Ω SMA terminations; optionally a DC block | $60-90 |
 | Now | D, E | an RTL-SDR Blog V4 (keep the v1 too) | about $40 |
 | Next | E | an Airspy HF+ Discovery, and a receive antenna (random wire and 9:1 unun, or an active loop) | $170-250 |
-| Next | G | G1: a small analog mixer (3+ line inputs) and a 1-to-3 splitter; or G2: matrix-box parts (six 10 kΩ audio-taper pots, resistors, jacks, a box); audio isolation transformers only if hum appears | $20-60 |
+| Next | G | G1: a small analog mixer (3+ line inputs) and a 1-to-3 splitter; or G2: matrix-box parts (six 10 kΩ audio-taper pots, six SPST toggles, resistors, jacks, a box); audio isolation transformers only if hum appears | $20-60 |
 | Later | F | licence exams | inexpensive |
 | Later | F | a used IC-7300, or an FT-891 (with a Digirig already owned) | the one large cost |
 | Later | F | a dummy load rated continuous above the test power; an inline RF sampler and attenuators; a power and SWR meter | $100-250 |
