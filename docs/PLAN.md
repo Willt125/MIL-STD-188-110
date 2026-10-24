@@ -570,6 +570,18 @@ user, never fetched by the test suite.
 - *Transmitting on the air needs a callsign* in the amateur profile, from P1 on; the
   transmissions are not yet identified by the software (P5 does that).
 
+**After P2, an option: a channel box between real stations** (recorded 2026-10-24). The
+virtual air adds fading and path losses in software between modem processes; bench G
+(ONAIR.md) sums real stations' audio in hardware, with no fading. The hybrid joins them: a
+computer runs `m110c-air` with sound-card *ports*, each cabled to a real station's
+interface, applying the Watterson channel and the path matrix per path between them, so
+real stations (real converters, clocks, keying latency) meet simulated propagation. The
+work it needs: every interface on the channel computer runs its own clock, so each port
+must resample continuously to the air's clock, its ratio tracked from the samples
+arriving (the FractionalResampler of P1 with a control loop), without drifting. Not part
+of P2; worth doing if bench G and the virtual air disagree in a way only real hardware
+under fading can settle.
+
 **Decisions (2026-10-20):**
 
 - **[DECIDED]** *TUI library: Textual* (MIT, Windows included, headless testing built in),
@@ -599,6 +611,8 @@ user, never fetched by the test suite.
   an SDR or a spectrum analyser on a dummy load).
 - P4: band noise and other modes.
 - P6: Pat to Pat over the air, and Winlink Express.
+- P4, P5: three stations on a shared audio bus (bench G): collisions, capture, listen
+  before talk, hidden stations.
 
 Gateways (D2, level 3) remain up to gateway operators.
 

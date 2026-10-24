@@ -24,7 +24,7 @@ whose chip is unknown and which may apply gain control or noise suppression nobo
 for. The UMC22, cleaner than either, is kept as a *reference*: what works on it and fails
 on a Digirig points at the interface; what fails on both points at the modem.
 
-There is no licence yet. Benches A-E need none. Bench F needs a licence and an HF
+There is no licence yet. Benches A-E and G need none. Bench F needs a licence and an HF
 transceiver, and waits for both.
 
 ---
@@ -36,12 +36,12 @@ jurisdiction.
 
 - **Nothing that can transmit is ever connected to an antenna without a licence that
   covers it.** That includes the LimeSDR's transmit ports. On benches A-E,
-  transmit paths are cables: audio between laptops, coax and attenuators between SDRs.
+  transmit paths are cables: audio between computers, coax and attenuators between SDRs.
 - **Receiving needs no licence.** Recording band noise and other stations (bench E) is
   fine. Recordings of other people's transmissions are kept as test data, not published.
 - **Never cable a transmitter straight into a receiver.** Put fixed attenuators between
   them (bench D), and start every session at the lowest transmit gain.
-- **The modem's amateur profile refuses to transmit without a callsign.** On benches A-D,
+- **The modem's amateur profile refuses to transmit without a callsign.** On benches A-D and G,
   where nothing reaches the air, use an obviously fictitious one (`N0CALL`, as the tests
   do). Never use someone else's callsign.
 
@@ -333,6 +333,106 @@ The recordings stay out of the repository: other people's transmissions. They ar
 |---|---|---|---|---|
 | | | | | |
 
+## Bench G: three stations on a shared audio "ether" (P4, P5; collisions)
+
+**Tests:** what happens between more than two real stations, with real transmissions
+rather than a model of them:
+- collisions: two waveforms from interfaces on independent clocks, overlapping at a
+  receiver;
+- capture: how much stronger one signal must be for the receiver to keep it through the
+  other (tools/netsim.py assumes a receiver keeps the first signal it locked onto);
+- listen before talk and the busy detector (P4) against real signals and real latency;
+- hidden stations (G2): two stations that cannot hear each other, both reaching a third;
+- later, sessions (P5) with a third station interfering, and a few of netsim's
+  measurements (NETWORK.md §7) repeated on hardware.
+
+No radio and no RF: it works because the stations are half duplex. Every station's output
+goes into a sum, and the sum goes into every station's input. A station hears its own
+signal only while transmitting, when it is deaf anyway (the station mutes its input), so it
+does not matter that it is in the sum.
+
+What it cannot show: fading (each path would need its own processing; that is P2's
+virtual air, and the hybrid in PLAN.md P2), a radio's automatic gain control (a strong
+signal makes a real receiver turn down, which changes who wins a collision), and anything
+of real propagation. For linear (SSB) radios, summing at audio is otherwise equivalent to
+summing at RF.
+
+**Needs:**
+- three computers: the two laptops and the main computer;
+- three interfaces: the two Digirigs and the UMC22 (the reference card is useful here: it
+  makes one station's signal easy to tell apart from the interfaces' own effects);
+- and one of:
+  - **G1, one bus (everyone hears everyone):** a small analog mixer with at least three
+    line inputs and a main output, with the main output split three ways (a passive
+    splitter, or the mixer's main and monitor outputs). Its faders set each station's
+    strength. Set its EQ flat and switch off any effects or compressor;
+  - **G2, a matrix (hidden stations too):** a small passive box, below.
+- quarter-inch and 3.5 mm cables to suit each interface;
+- audio isolation transformers (one per path to the main computer), only if hum appears.
+
+**G2, the matrix box.** One summing node per receiver, fed by the two *other* stations
+through their own path pot. A pot is that path's loss; fully down, the pair is hidden from
+each other. (No self path: it is not needed, and leaving it out lets a station run full
+duplex for tests without hearing itself.)
+
+```
+            to R1 input             to R2 input             to R3 input
+               ^                       ^                       ^
+             node1                   node2                   node3
+           (1 k to gnd)            (1 k to gnd)            (1 k to gnd)
+            ^       ^               ^       ^               ^       ^
+          10 k    10 k            10 k    10 k            10 k    10 k   summing resistors
+            |       |               |       |               |       |
+          P21     P31             P12     P32             P13     P23    10 k audio-taper pots,
+            |       |               |       |               |       |    wired as dividers to gnd
+           T2      T3              T1      T3              T1      T2    (Pjk: Tj's path to Rk)
+
+T1, T2, T3: the stations' outputs (each feeds two pots). All grounds common.
+```
+
+Parts: six 10 kΩ audio-taper (logarithmic) potentiometers, six 10 kΩ and three 1 kΩ
+resistors, three input and three output jacks to suit the cables, a small metal box,
+hookup wire: about $20-35. Passive summing loses level (on the order of 20 dB with these
+values), which the receiving interfaces' gain makes up; the UMC22's line output is much
+hotter than a Digirig's, so its pots run lower (or add a pad on its two paths).
+
+**Setup:**
+- Run the laptops on battery. If hum appears with the main computer on mains power, put
+  isolation transformers in its paths.
+- UMC22: Direct Monitor off, phantom power off (as in bench B).
+- **Calibrate the paths:** each station in turn sends a message (`m110c-modem --audio
+  --callsign N0CALL --send ...`); the other two note the level (`--levels 1`) and the
+  SNR reported. Write down the matrix of levels in dB; set the pots (or faders) for the
+  test, and record the settings.
+- Noise, if wanted: G1, a fourth mixer channel playing noise from any source; G2 runs on
+  the interfaces' own noise floor, so the pots set signal-to-interference rather than SNR.
+
+**Run:**
+1. *Collisions by hand* (from P1 on, no busy detector needed): stations 1 and 2 send
+   600S messages to station 3 at about the same moment (`--send`, started together by hand:
+   the overlap matters, not its exact timing), at relative levels of 0, 6, 10 and 20 dB. Note which message, if
+   either, station 3 decodes, and how many bytes are damaged.
+2. *Late arrivals:* station 2 starts while station 1's message is under way, weaker and
+   stronger. Does station 3 keep station 1 (netsim's "capture" rule), switch, or lose
+   both?
+3. *Listen before talk* (P4): stations that hear each other defer; count the collisions
+   left against netsim's figures.
+4. *Hidden stations* (G2): turn the pots between stations 1 and 2 fully down, both still
+   reaching station 3. Listen before talk no longer protects them; compare with netsim.
+5. *Sessions with an interferer* (P5): a session between stations 1 and 3 while station 2
+   sends at random.
+
+**Record:**
+- the level matrix and the pot or fader settings;
+- for each collision: relative level, overlap, what was decoded, bytes damaged;
+- the level difference at which the stronger signal survives (capture), for comparison
+  with netsim's assumption;
+- busy-detector decisions and collisions avoided or not (P4 on).
+
+| Date | G1 or G2 | Stations, interfaces | Commit | Test | Relative level (dB) | Result |
+|---|---|---|---|---|---|---|
+| | | | | | | |
+
 ---
 
 ## What to acquire, in order
@@ -347,6 +447,7 @@ Prices are rough, from listings of varying age (2026-10); check before buying.
 | Now | D | Mini-Circuits VAT-10+, VAT-20+, VAT-30+; RG316 SMA cables; 50 Ω SMA terminations; optionally a DC block | $60-90 |
 | Now | D, E | an RTL-SDR Blog V4 (keep the v1 too) | about $40 |
 | Next | E | an Airspy HF+ Discovery, and a receive antenna (random wire and 9:1 unun, or an active loop) | $170-250 |
+| Next | G | G1: a small analog mixer (3+ line inputs) and a 1-to-3 splitter; or G2: matrix-box parts (six 10 kΩ audio-taper pots, resistors, jacks, a box); audio isolation transformers only if hum appears | $20-60 |
 | Later | F | licence exams | inexpensive |
 | Later | F | a used IC-7300, or an FT-891 (with a Digirig already owned) | the one large cost |
 | Later | F | a dummy load rated continuous above the test power; an inline RF sampler and attenuators; a power and SWR meter | $100-250 |
@@ -356,5 +457,5 @@ Not needed: the UV-5R, a cheap anonymous USB sound card, a separate USB-serial a
 one does that job), a signal generator or an oscilloscope (the SDRs cover the timing
 measurements).
 
-Benches A-E cover P1, P2, P4, P5 and P6, and P3 except real radio timing. Only bench F's
+Benches A-E and G cover P1, P2, P4, P5 and P6, and P3 except real radio timing. Only bench F's
 measurements and the final on-air acceptance wait for the licence.
