@@ -1,9 +1,11 @@
 """Bench tests on real hardware (docs/ONAIR.md), skipped unless their environment variable
 says the hardware is connected. Nothing here reaches an antenna: the paths are cables.
 
-``M110C_AUDIO_LOOPBACK``: a sound card whose output is cabled (through an attenuator pad)
-back to its own input, named as ``m110c-modem --list-audio`` shows it ("default" for the
-system's default). Every mode is sent and received full duplex (bench B or C, one card).
+``M110C_AUDIO_LOOPBACK``: an audio interface whose output is cabled back to its own input
+(the UMC22 from a main output to input 1, Direct Monitor off; or a Digirig from its
+transmit audio to its receive audio), named as ``m110c-modem --list-audio`` shows it
+("default" for the system's default). Every mode is sent and received full duplex
+(bench C).
 
 ``M110C_SDR_LOOP``: two SoapySDR argument strings, the transmitter's and the receiver's,
 separated by ";" (e.g. "driver=lime;driver=rtlsdr"), joined by coax with at least 40 dB of

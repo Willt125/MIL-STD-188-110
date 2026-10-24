@@ -6,11 +6,23 @@ real radios. Each bench says what it tests and what it needs. It also gives the 
 what to run, and what to record. Results go in the log at the end of each bench, with the
 date, the hardware and the commit.
 
-Written 2026-10-20 for the equipment at hand:
+Written 2026-10-20, revised 2026-10-24 for the equipment at hand and the shopping list at
+the end:
 - spare laptops (one to three);
 - a LimeSDR (USB, v1);
 - an RTL-SDR (v1);
-- a Baofeng UV-5R.
+- a Behringer UMC22 (USB audio interface).
+
+The Baofeng UV-5R is not used in this project: an FM handheld with filtered, emphasised
+audio represents nothing an HF data station uses.
+
+**Representative, not expensive.** The benches use the parts real digital-mode stations
+use, which are mostly ordinary ones: a C-Media CM108-family codec in a USB interface (the
+Digirig), or the 16-bit USB codec built into a radio. Better converters would make a test
+less representative, not more. What the benches avoid is the anonymous part: a dongle
+whose chip is unknown and which may apply gain control or noise suppression nobody asked
+for. The UMC22, cleaner than either, is kept as a *reference*: what works on it and fails
+on a Digirig points at the interface; what fails on both points at the modem.
 
 There is no licence yet. Benches A-E need none. Bench F needs a licence and an HF
 transceiver, and waits for both.
@@ -23,7 +35,7 @@ These are US rules as we understand them. This is not legal advice; check your o
 jurisdiction.
 
 - **Nothing that can transmit is ever connected to an antenna without a licence that
-  covers it.** That includes the LimeSDR's transmit ports and the UV-5R. On benches A-E,
+  covers it.** That includes the LimeSDR's transmit ports. On benches A-E,
   transmit paths are cables: audio between laptops, coax and attenuators between SDRs.
 - **Receiving needs no licence.** Recording band noise and other stations (bench E) is
   fine. Recordings of other people's transmissions are kept as test data, not published.
@@ -32,9 +44,6 @@ jurisdiction.
 - **The modem's amateur profile refuses to transmit without a callsign.** On benches A-D,
   where nothing reaches the air, use an obviously fictitious one (`N0CALL`, as the tests
   do). Never use someone else's callsign.
-- **The UV-5R stays receive-only.** Transmitting needs a licence. Even then it is a poor
-  test transmitter: FM only, emphasised and filtered audio, notoriously poor spurious
-  emissions. Never key it without an antenna or dummy load, or it can damage itself.
 
 ---
 
@@ -67,88 +76,97 @@ several modem processes. Most of P5 and P6 is tested the same way, before any ot
 - real converters;
 - two independent clocks (the transmit and receive clock offsets the receiver must
   follow);
-- the audio input's own processing;
+- the audio interfaces' own behaviour, representative (Digirig) and reference (UMC22);
 - Pat to Pat over a real audio path;
 - Winlink Express, if one laptop runs Windows.
 
 **Needs:**
 - two laptops;
-- a 3.5 mm cable (about $5);
-- TRRS splitters, if the laptops have one combined headset jack (about $5 each);
-- a 20-40 dB attenuator pad from headphone out to mic in. Mic inputs expect tens of
-  millivolts and clip on a headphone level. Inline pads exist. Two resistors also do,
-  for example 10 kΩ in series and 100 Ω to ground, about 40 dB.
+- two Digirig Mobile interfaces, one per laptop, and a cable joining their audio jacks
+  (each one's transmit audio to the other's receive audio: wire it from Digirig's
+  published pinout, or use their cables and a small adapter);
+- for the reference run, the UMC22 on one laptop instead of its Digirig: a cable from a
+  UMC22 main output (quarter-inch TRS) to the Digirig's receive audio, and from the
+  Digirig's transmit audio to UMC22 input 1 (quarter-inch, the combo jack's line input).
+
+Laptops' own headset jacks are avoided: they are combined (TRRS) jacks with microphone
+processing in the way, and represent nothing a station uses.
 
 **Setup:**
 
 ```
-laptop 1 headphone out ──[pad 20-40 dB]──> laptop 2 mic in
-laptop 2 headphone out ──[pad 20-40 dB]──> laptop 1 mic in     (second cable, for sessions)
+laptop 1 ── Digirig 1 ── TX audio ──> RX audio ── Digirig 2 ── laptop 2
+                         RX audio <── TX audio
+reference: Digirig 1 replaced by the UMC22 (main out -> Digirig RX, Digirig TX -> input 1)
 ```
 
-- Turn off everything the operating system does to the mic input: automatic gain, noise
-  suppression, echo cancellation, "enhancements". Each of them damages 8-PSK, so check
-  them again after updates.
-- Set the input level so that the modem's level meter (P1) shows no clipping, with
-  margin.
+- **Levels:** set in the operating system's mixer (and, on the UMC22, its gain and output
+  knobs) so that the modem's meter (`--levels 2`) shows peaks of about -10 to -6 dBFS and
+  no clipping. A Digirig's transmit audio is meant for a radio's microphone input and its
+  receive side for a radio's speaker output, so expect to raise the receiving side's gain.
+- **UMC22:** Direct Monitor *off* (it mixes the input into the outputs: the station would
+  hear and repeat itself), phantom power off.
+- Turn off anything the operating system does to an input: automatic gain, noise
+  suppression, echo cancellation, "enhancements". Each of them damages 8-PSK; check again
+  after updates.
 
 **Run:**
 - every mode, both directions, `m110c-modem` on each side, e.g.
   `m110c-modem --audio --callsign N0CALL --chat --rate 1200` on both laptops, typing on
-  one and reading on the other (`--list-audio` names the cards; `--levels 2` shows the
-  input level while you set it);
+  one and reading on the other (`--list-audio` names the cards; `-s 48000`);
+- the same with the UMC22 at one end;
 - an hour of continuous reception: memory, dropped buffers, clock offset over time;
 - a 10-minute message;
 - then sessions (P5);
 - Pat to Pat (P6).
 
 **Record:**
-- the clock offset each receiver reports, which is the two sound cards' difference, and
+- the clock offset each receiver reports, which is the two interfaces' difference, and
   its drift;
 - dropped and repeated buffers;
-- errors per mode;
-- the input level used.
+- errors per mode, Digirig to Digirig and with the UMC22;
+- the levels used.
 
-| Date | Laptops, OS | Commit | Clock offset (ppm) | Result |
-|---|---|---|---|---|
-| | | | | |
+| Date | Laptops, OS | Interfaces | Commit | Clock offset (ppm) | Result |
+|---|---|---|---|---|---|
+| | | | | | |
 
-## Bench C: USB sound cards and a keying line (P1, P3)
+## Bench C: one interface looped back, and a keying line (P1, P3)
 
 **Tests:**
-- the USB sound cards a station would really use;
-- serial and GPIO keying, and their timing against the audio;
+- each interface on its own, its output cabled back to its input;
+- serial keying, and its timing against the audio;
 - `rigctld` keying through Hamlib's dummy rig;
 - the transmit watchdog;
 - unplugging a device mid-transmission (the keying line must drop).
 
 **Needs:**
-- two CM108-based USB sound cards (about $10 each). The CM108's GPIO pin is a keying
-  method in its own right, and some cards bring it out;
-- a USB-serial adapter, FTDI or CP2102 (about $10);
-- an LED and a resistor (about 1 kΩ) on its RTS line, as a stand-in for the radio's PTT;
+- the UMC22 with a quarter-inch TRS cable from a main output to input 1;
+- a Digirig with a cable from its transmit audio to its own receive audio;
+- for watching the keying line: the Digirig's PTT output switching an LED (an LED, a
+  resistor of about 1 kΩ and a small 5 V source, such as a USB breakout, wired as
+  Digirig's documentation shows for its PTT output). The Digirig's keying comes from its
+  serial port's RTS line, so no separate USB-serial adapter is needed;
 - Hamlib, for `rigctld -m 1` (its dummy rig).
 
-**Setup:** the cards replace the built-in jacks of bench B. A pad is still needed if a
-card's mic input is used.
-
 **Run:**
-- with one card's output cabled to its own input (through the pad),
-  `M110C_AUDIO_LOOPBACK=<card> pytest tests/acceptance/test_benches.py -s`: every mode out
+- `M110C_AUDIO_LOOPBACK=<card> pytest tests/acceptance/test_benches.py -s` with each
+  interface in turn (UMC22: Direct Monitor off, gain set as in bench B): every mode out
   and back, full duplex;
 - each keying method (P3);
 - the watchdog: hold a transmission past its limit and check the line drops;
 - pull the USB cable mid-transmission;
-- to time keying against the audio, record the LED with the laptop's camera, or wire RTS
-  through a divider into the second card's input as a step.
+- to time keying against the audio, record the LED with the laptop's camera, or feed the
+  keying line through a divider into the UMC22's second input as a step beside the audio.
 
 **Record:**
+- SNR and errors per mode, per interface;
 - the delay from key to audio, and from audio end to unkey, per method;
 - whether the watchdog and the unplug test leave the line unkeyed.
 
 Real radio latency waits for bench F.
 
-| Date | Card, adapter | Commit | Method | Key to audio (ms) | Result |
+| Date | Interface | Commit | Method | Key to audio (ms) | Result |
 |---|---|---|---|---|---|
 | | | | | | |
 
@@ -162,12 +180,16 @@ Real radio latency waits for bench F.
 - gain staging.
 
 **Needs:**
-- the LimeSDR (transmitter) and the RTL-SDR (receiver);
-- two SMA cables;
-- fixed SMA attenuators: 10, 20 and 30 dB (at least 40 dB in line);
-- a 50 Ω terminator for each unused port;
-- optionally a DC block;
-- SoapySDR with its LimeSDR and RTL-SDR modules.
+- the LimeSDR (transmitter) and two receivers in turn: the RTL-SDR v1 (its crystal is
+  often tens of ppm off: the hard case for the receiver's corrections) and an RTL-SDR Blog
+  V4 (a 1-ppm oscillator: the easy case, and HF without modification);
+- short SMA cables (RG316 assemblies);
+- fixed SMA attenuators whose values can be trusted: Mini-Circuits VAT-10+, VAT-20+ and
+  VAT-30+ (at least 40 dB in line). Generic ones work for a loop, but their real
+  attenuation and match are unknown, and the levels here are measurements;
+- 50 Ω SMA terminations for the unused ports, and optionally an SMA DC block (Mini-Circuits
+  makes both);
+- SoapySDR with its LimeSDR and RTL-SDR modules (the V4 needs the RTL-SDR Blog driver).
 
 **Setup:**
 
@@ -221,10 +243,11 @@ and the false alarms in hours of noise. The synthetic stand-ins of P4 are checke
 these recordings.
 
 **Needs:**
-- the LimeSDR (receive only) and a wire antenna for HF: a few metres of wire is enough
-  to hear the bands. The LimeSDR USB is weak below a few MHz but usable on 7-30 MHz;
-- optionally the UV-5R's audio into a laptop, for VHF/UHF data and voice heard through an
-  FM radio.
+- an HF receiver with room for strong signals: an Airspy HF+ Discovery (its strong-signal
+  handling on HF suits crowded bands; SoapySDR has a driver for it). Until then, the
+  LimeSDR (weak below a few MHz, usable on 7-30 MHz) or the RTL-SDR Blog V4;
+- an antenna: a random wire with a 9:1 unun, or an inexpensive active loop. A few metres
+  of wire is enough to start.
 
 **Setup:**
 - the antenna on a **receive** port only;
@@ -232,7 +255,7 @@ these recordings.
   device).
 
 **Run:** recordings of 10-60 minutes each (the SDR device's receive side, P1, or the
-LimeSDR's own tools), as I/Q or audio with the frequency, time and
+receiver's own tools), as I/Q or audio with the frequency, time and
 band conditions noted. Wanted:
 - quiet bands at night and by day;
 - crowded segments: FT8 (for example 14.074 MHz), RTTY contests, PSK31;
@@ -264,15 +287,23 @@ The recordings stay out of the repository: other people's transmissions. They ar
 - **A licence.** In the US, Technician permits digital modes on all bands above 50 MHz,
   and on HF only 28.0-28.3 MHz (10 m). General opens most HF data segments. The two exams
   can be taken in one sitting.
-- **An HF transceiver with a built-in USB sound card**, which covers audio, CAT keying
-  and usually RTS keying with one cable. Buying used or borrowing is fine.
-  - *Avoid* the single-tone digital-mode designs (QDX, QMX and the like) and
-    polar-modulation rigs such as the (tr)uSDX. They are built for FT8-style single
-    tones and cannot transmit 8-PSK faithfully.
-  - An interface such as a Digirig (serial keying) or a SignaLink (VOX, isolated) serves
-    a rig without one, and tests those keying methods.
-- **A dummy load** rated for continuous duty at the transmitter's full power. Run 110,
-  a continuous signal, at 25-50% of the rig's rating for long tests.
+- **An HF transceiver, a linear (SSB) one.** Two good choices:
+  - *a used Icom IC-7300*: the closest thing to a reference radio among Winlink, VARA and
+    ARDOP users, with built-in USB audio and CAT control on one cable. If the modem works
+    on it, it works where most users are;
+  - *a Yaesu FT-891 with one of the Digirigs*: cheaper, and with no built-in USB audio it
+    tests the external-interface path most older radios use.
+
+  Buying used or borrowing is fine. *Avoid* single-tone digital-mode designs (QDX, QMX
+  and the like) and polar-modulation rigs such as the (tr)uSDX: built for FT8-style single
+  tones, they cannot transmit 8-PSK faithfully. Be wary of radios with a doubtful record
+  for transmit purity (some inexpensive SDR transceivers) for the spectrum measurement.
+  A SignaLink (VOX, isolated) is worth adding only to test VOX keying (P3).
+- **A dummy load chosen by its continuous rating**, not its headline wattage: many "100 W"
+  loads are rated 20 W continuous. Off-the-shelf HF loads that combine 100 W continuous
+  with a sampling port are hard to find; the practical arrangement is a load rated well
+  above the test power, with a separate inline RF sampler. Run 110, a continuous signal,
+  at 10-25 W for long tests.
 - **An inline power and SWR meter.**
 - **An RF sampler** (or a dummy load with a sampling port) **and fixed attenuators**,
   bringing the signal to around -30 dBm for the SDRs:
@@ -306,13 +337,24 @@ The recordings stay out of the repository: other people's transmissions. They ar
 
 ## What to acquire, in order
 
-| For | Item | Rough cost |
-|---|---|---|
-| B | 3.5 mm cables, TRRS splitters, a 20-40 dB audio pad (or two resistors) | $10-20 |
-| C | two CM108 USB sound cards; a USB-serial adapter; an LED and resistor | $25-35 |
-| D | SMA attenuators (10, 20, 30 dB), SMA cables, 50 Ω terminators, optionally a DC block | $20-40 |
-| E | wire for an HF receive antenna | a few dollars |
-| F | licence exams; an HF transceiver with USB audio; a dummy load; a power meter; an RF sampler and attenuators | the licence is inexpensive; the rest is the one large cost, and can wait |
+Prices are rough, from listings of varying age (2026-10); check before buying.
+
+| When | For | Item | Rough cost |
+|---|---|---|---|
+| Now | B, C | two Digirig Mobile interfaces (digirig.net; cables sold separately) and their cables | $130-150 |
+| Now | B, C | shielded quarter-inch TRS cables (pro-audio brand, e.g. Hosa) for the UMC22 (already owned) | $15-25 |
+| Now | C | an LED, a resistor, a small 5 V source (USB breakout) for watching the keying line | $5-10 |
+| Now | D | Mini-Circuits VAT-10+, VAT-20+, VAT-30+; RG316 SMA cables; 50 Ω SMA terminations; optionally a DC block | $60-90 |
+| Now | D, E | an RTL-SDR Blog V4 (keep the v1 too) | about $40 |
+| Next | E | an Airspy HF+ Discovery, and a receive antenna (random wire and 9:1 unun, or an active loop) | $170-250 |
+| Later | F | licence exams | inexpensive |
+| Later | F | a used IC-7300, or an FT-891 (with a Digirig already owned) | the one large cost |
+| Later | F | a dummy load rated continuous above the test power; an inline RF sampler and attenuators; a power and SWR meter | $100-250 |
+
+Not needed: the UV-5R, a cheap anonymous USB sound card, a separate USB-serial adapter
+(the Digirig has one), a SignaLink before P3, a hardware channel simulator (the software
+one does that job), a signal generator or an oscilloscope (the SDRs cover the timing
+measurements).
 
 Benches A-E cover P1, P2, P4, P5 and P6, and P3 except real radio timing. Only bench F's
 measurements and the final on-air acceptance wait for the licence.
