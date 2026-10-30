@@ -68,3 +68,58 @@ def check_rolloff(profile: Profile, rolloff: float | None) -> float:
             "data); --profile authorized lifts the limit, for authorised stations only"
         )
     return rolloff
+
+
+def check_transmit(profile: Profile, callsign: str | None, on_air: bool) -> None:
+    """Raise ValueError if ``profile`` does not allow a transmission: in the amateur profile,
+    nothing goes on the air without the station's callsign configured (D1). Files and
+    virtual devices put nothing on the air and need none.
+
+    Configuring the callsign does not identify the transmissions themselves: until the link
+    layer sends it in every transmission (PLAN.md P5), raw messages from the modem program
+    must carry their identification in their content, as the operator writes it."""
+    if not on_air or profile is not AMATEUR:
+        return
+    if not callsign or not valid_callsign(callsign):
+        raise ValueError(
+            "the amateur profile transmits on the air only with the station's callsign "
+            "configured (--callsign); it is the station's identification (docs/NETWORK.md D1)"
+        )
+
+
+def valid_callsign(callsign: str) -> bool:
+    """Shaped like an amateur callsign: 3-7 letters and digits with at least one of each
+    (an optional -SSID or /suffix aside). A sanity check against typos, not a lookup."""
+    base = callsign.upper().split("-")[0].split("/")[0]
+    return (
+        3 <= len(base) <= 7
+        and base.isalnum()
+        and any(c.isdigit() for c in base)
+        and any(c.isalpha() for c in base)
+    )
+
+
+SDR_TX_MODES = ("off", "bench", "filtered")
+SDR_NOTICE = """\
+*** SDR transmitter: output cap lifted ("filtered") ***
+An SDR has no output filter: its harmonics and spurious emissions are only as low as the
+filter (and any amplifier) after it makes them. You have stated that one is fitted. Make
+sure the station meets the spurious-emission limits that apply to you before it reaches an
+antenna."""
+
+
+def check_sdr_transmit(tx_mode: str, tx_gain: float | None) -> None:
+    """An SDR transmits only as a bench device ("bench": its lowest gain, a reduced digital
+    level, for coax and attenuators; docs/ONAIR.md bench D) unless the operator states that
+    a filter follows it ("filtered", which prints SDR_NOTICE), or not at all ("off").
+
+    This is a limit of the hardware, not of a service, so it holds in every profile: an
+    SDR's output is unfiltered whoever operates it. Raises ValueError for an unknown mode,
+    or a gain asked for while capped."""
+    if tx_mode not in SDR_TX_MODES:
+        raise ValueError(f"SDR transmit mode must be one of {', '.join(SDR_TX_MODES)}")
+    if tx_mode == "bench" and tx_gain is not None:
+        raise ValueError(
+            "an SDR transmits at its lowest gain unless a filter follows it: set the transmit "
+            'mode to "filtered" to choose a gain (after fitting one; docs/ONAIR.md)'
+        )

@@ -124,3 +124,91 @@ def resample(x: np.ndarray, rate_in: int, rate_out: int) -> np.ndarray:
     """One-shot: all of ``x`` at the new rate."""
     r = Resampler(rate_in, rate_out)
     return np.concatenate([r.process(x), r.flush()])
+
+
+PHASES = 256  # the fractional resampler's filter table: positions per input sample
+
+
+class FractionalResampler:
+    """Streaming resampler by any ratio (output samples per input sample), for small
+    corrections such as a sound card's clock error (``--tx-ppm``: a ratio of 1.00005 is
+    no fraction a rational resampler could use).
+
+    The same low-pass filter as :class:`Resampler`, tabulated at PHASES positions per input
+    sample. Output sample m lies at input position t = m / ratio; its value is
+
+        y[m] = sum_j x[j] h(t - j),
+
+    with h read from the table by linear interpolation between the two nearest positions.
+    Output 0 lies on input 0 (no delay), so the output does not depend on chunking. The
+    error of the interpolated table is below the filter's own (about -80 dB) in the voice
+    channel."""
+
+    def __init__(self, ratio: float, sample_rate: int):
+        if ratio <= 0:
+            raise ValueError("ratio must be positive")
+        self.ratio = ratio
+        L = PHASES
+        h = lowpass(L, sample_rate, sample_rate)  # at L times the rate; each row sums to 1
+        self.centre = (h.size - 1) // 2
+        width = -(-(h.size + 1) // L) + 1
+        padded = np.zeros(width * L + 1)
+        padded[: h.size] = h
+        # Row p: taps p, p + L, ... and the same one step further on (for interpolating).
+        self._table = padded[: width * L].reshape(width, L).T.copy()
+        self._next = padded[1 : width * L + 1].reshape(width, L).T.copy()
+        self._width = width
+        self._x = np.zeros(0, dtype=complex)
+        self._x_start = 0
+        self._n_in = 0
+        self._m = 0
+
+    def _window(self, m: np.ndarray):
+        """For outputs m: the table row, the interpolation fraction, the newest input."""
+        position = m / self.ratio * PHASES + self.centre  # in table positions
+        base = np.floor(position).astype(np.int64)
+        return base % PHASES, position - base, base // PHASES
+
+    def _outputs(self, stop: int) -> np.ndarray:
+        m = np.arange(self._m, stop)
+        if m.size == 0:
+            return np.zeros(0, dtype=complex)
+        row, frac, newest = self._window(m)
+        j = newest[:, None] - np.arange(self._width)[None, :] - self._x_start
+        inside = (j >= 0) & (j < self._x.size)
+        held = self._x if self._x.size else np.zeros(1, dtype=complex)
+        x = np.where(inside, held[np.clip(j, 0, held.size - 1)], 0)
+        taps = (1 - frac)[:, None] * self._table[row] + frac[:, None] * self._next[row]
+        y = np.sum(x * taps, axis=1)
+        self._m = stop
+        oldest = int(self._window(np.array([stop]))[2][0]) - self._width + 1
+        drop = max(0, min(oldest - self._x_start, self._x.size))
+        self._x, self._x_start = self._x[drop:], self._x_start + drop
+        return y
+
+    def process(self, x: np.ndarray) -> np.ndarray:
+        """Accept input samples; return every output whose inputs have all arrived."""
+        x = np.asarray(x, dtype=complex)
+        self._x = np.concatenate([self._x, x])
+        self._n_in += x.size
+
+        # Output m is complete once its newest input, (m / ratio * L + centre) // L, has
+        # arrived: m < (n_in * L - centre) * ratio / L, give or take rounding.
+        def newest(m):
+            return int(self._window(np.array([m]))[2][0])
+
+        stop = int((self._n_in * PHASES - self.centre) * self.ratio / PHASES)
+        while newest(stop) < self._n_in:
+            stop += 1
+        while stop > 0 and newest(stop - 1) >= self._n_in:
+            stop -= 1
+        stop = min(max(stop, self._m), self.total_outputs())
+        return self._outputs(stop)
+
+    def flush(self) -> np.ndarray:
+        """The remaining outputs, as if the input continued with zeros."""
+        return self._outputs(self.total_outputs())
+
+    def total_outputs(self) -> int:
+        """Outputs for the input so far: the same duration at the new rate."""
+        return ceil(self._n_in * self.ratio)
