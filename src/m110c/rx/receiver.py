@@ -85,12 +85,21 @@ class Receiver:
         trace: bool = False,
         late_entry: bool = False,
         rolloff: float = DEFAULT_ROLLOFF,
+        working_rate: int | None = None,
     ):
         # The receiver runs at the input rate when it is a multiple of 2400 S/s; other rates
-        # (8000, 44100, ...) are resampled to 9600 S/s first (S3). Sample positions in the
-        # diagnostics (Detection.segment_start, Message.end_sample) count at sample_rate.
+        # (8000, 44100, ...) are resampled to 9600 S/s first (S3). working_rate=9600 resamples
+        # every other rate too: the search for a preamble costs in proportion to the rate it
+        # runs at (at 48000 S/s, 8 times 9600's while idle, and 2 cores with late entry;
+        # docs/PERFORMANCE.md, P1), and every measurement of this receiver was made at 9600.
+        # Sample positions in the diagnostics (Detection.segment_start, Message.end_sample)
+        # count at sample_rate, the rate it works at.
+        if working_rate not in (None, INTERNAL_RATE):
+            raise ValueError(f"working_rate must be None or {INTERNAL_RATE}")
         self.input_rate = sample_rate
         native = sample_rate % T.SYMBOL_RATE == 0
+        if working_rate is not None:
+            native = sample_rate == working_rate
         self._resampler = None if native else Resampler(sample_rate, INTERNAL_RATE)
         self.sample_rate = sample_rate if native else INTERNAL_RATE
         self.carrier_hz = carrier_hz

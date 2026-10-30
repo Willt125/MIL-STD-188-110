@@ -13,6 +13,7 @@ from m110c import profile
 from m110c.audio import FileDevice, VirtualDevice
 from m110c.cli import tx_main
 from m110c.modulate import modulate
+from m110c.resample import Resampler
 from m110c.rx.receiver import Receiver
 from m110c.spec import mode
 from m110c.station import (
@@ -307,3 +308,31 @@ def test_the_station_keeps_up_with_real_time(rate, interleave):
     start = time.perf_counter()
     station.run()
     assert (time.perf_counter() - start) / (x.size / 9600) < 0.75
+
+
+def test_a_sound_card_rate_is_received_at_9600():
+    """At 48000 S/s the station's receiver works at 9600 (Receiver(working_rate=9600)): the
+    same bytes, for a fraction of the cost while idle (docs/PERFORMANCE.md, P1)."""
+    x, payloads = two_messages()
+    x48 = Resampler(9600, 48000).process(x)
+    station, log = run_station(VirtualDevice(x48, sample_rate=48000, block=4800))
+    station.run()
+    assert station.receiver.sample_rate == 9600 and station.receiver.input_rate == 48000
+    assert by_message(log) == list(payloads)
+    with pytest.raises(ValueError, match="working_rate"):
+        Receiver(sample_rate=48000, working_rate=24000)
+    assert Receiver(sample_rate=48000).sample_rate == 48000  # m110c-rx: unchanged
+
+
+@pytest.mark.skipif(bool(os.environ.get("M110C_SKIP_TIMING")), reason="M110C_SKIP_TIMING set")
+@pytest.mark.parametrize("late_entry", [False, True])
+def test_a_sound_card_rate_keeps_up_while_idle(late_entry):
+    """Idle at 48000 S/s, the search once cost 0.43 of a core (2.1 with late entry): more
+    than a 2-core laptop's processor can spare. At 9600 inside: 0.06 (0.31)."""
+    x = noisy(np.zeros(48000 * 6, complex), rms=0.02)
+    station = Station(
+        VirtualDevice(x, sample_rate=48000, block=4800), receiver_options={"late_entry": late_entry}
+    )
+    start = time.process_time()
+    station.run()
+    assert (time.process_time() - start) / 6 < 0.75

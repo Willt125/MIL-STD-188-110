@@ -23,14 +23,15 @@ modem works across platforms, which CI (Linux) cannot:
 | Laptop F | HP 14z-fq0000 | Fedora Workstation | a different Linux stack: RPM packages, a newer kernel, PipeWire by default |
 
 Notes on the laptops:
-- Both are being repaired (donated "to repair"), so their processors are not known yet.
-  The processor is soldered to the motherboard; this model's builds range from Ryzen 5
-  (4500U and similar) down to the 2-core AMD 3020e. On a Ryzen the station's 0.06-0.27 of
-  a core per second of signal is no concern; on a 3020e expect two to three times that,
-  tight with late entry on. If a motherboard is replaced, the replacement decides the
-  processor. Once each runs, record it (BIOS setup screen, `lscpu`, or Windows Settings,
-  About) and run the real-time budget test first:
-  `pytest tests/unit/test_station.py -k keeps_up`.
+- Both are being repaired (donated "to repair"). Their processor, per HP's store listing
+  for the product number, is the **AMD 3020e**: 2 cores, 2 threads, 1.2 GHz base and up to
+  2.6 GHz, soldered to the motherboard. The station's measured cost (PERFORMANCE.md, P1:
+  0.06 of a core idle, about 0.2 receiving, 0.3 idle with late entry, on a faster
+  machine) should be two to three times that here: within two cores, but late entry and
+  anything else running (a browser, Pat) leave little spare. Measuring it was what found
+  the 48 kS/s search costing eight times too much, now fixed. Once each laptop runs, run
+  the real-time tests first: `pytest tests/unit/test_station.py -k "keeps_up"`, and note
+  the figures in bench A's log.
 - USB: two USB-A ports and one USB-C, enough for an audio interface and the USB Ethernet
   adapter on separate ports. Wired Ethernet (HP's USB adapter) is used for anything timed
   over the network, such as P2's virtual air between machines.

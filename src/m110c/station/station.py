@@ -33,6 +33,7 @@ from ..spec import mode as mode_of
 from ..tx import Transmitter
 from . import events as ev
 
+RECEIVE_RATE = 9600  # the rate the station's receiver works at, whatever the device's
 DEFAULT_RMS = 0.4  # the modulator's level at drive 0 dB: about 3 dB of headroom (io.py)
 
 
@@ -76,6 +77,9 @@ class Station:
         self.level_interval = int(level_interval_s * self.rate)
         options = dict(receiver_options or {})
         options.setdefault("carrier_hz", carrier_hz)
+        # A sound card's 48000 S/s is brought down to 9600 before the receiver: searching at
+        # the card's rate cost 8 times as much while idle (docs/PERFORMANCE.md, P1).
+        options.setdefault("working_rate", RECEIVE_RATE)
         self.receiver = Receiver(sample_rate=self.rate, rolloff=self.rolloff, **options)
         self._callbacks = []
         self._callback_lock = threading.Lock()

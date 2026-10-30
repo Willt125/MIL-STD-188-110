@@ -829,7 +829,25 @@ signal.
 | 0.19 | 0.23 | 0.18 | 0.24 | 0.25 | 0.20 | 0.09 | 0.08 | 0.06 | 0.27 |
 
 A test holds it under 0.75 for three modes (`tests/unit/test_station.py`; set
-`M110C_SKIP_TIMING` on a very slow machine). The transmitter keeps a second of output queued
+`M110C_SKIP_TIMING` on a very slow machine).
+
+**At a sound card's rate.** Those figures are at 9600 S/s; sound cards run at 48000, a
+multiple of 2400, at which the receiver used to work natively. Receiving a message cost
+about the same (the demodulator brings the rate down early), but the search for a preamble
+runs at the input rate, and it runs all the time (CPU seconds per second, the same
+machine, nothing else running):
+
+| At 48000 S/s | Idle | Idle, late entry on | Receiving 2400S | 600S | 75S |
+|---|---:|---:|---:|---:|---:|
+| The receiver at 48000 | 0.43 | 2.13 | 0.20 | 0.17 | 0.08 |
+| Brought down to 9600 first | 0.06 | 0.31 | 0.21 | 0.19 | 0.08 |
+
+With late entry on, the station could not keep up even on this machine; on the test
+laptops' 2-core AMD 3020e (docs/ONAIR.md) the idle search alone would have taken much of a
+core. Every measurement of this receiver was made at 9600 S/s anyway, so the station's
+receiver now always works there (`Receiver(working_rate=9600)`, through the S3 resampler).
+`m110c-rx` is unchanged. Transmitting costs 0.01-0.02 of a core at either rate. Tests hold
+the idle cost at 48000 S/s under 0.75, late entry included. The transmitter keeps a second of output queued
 ahead of the sound card, so a slow moment of the receiver's does not starve it.
 
 One measurement pitfall worth keeping: a process pool reuses its workers, so a variant set
