@@ -6,12 +6,42 @@ real radios. Each bench says what it tests and what it needs. It also gives the 
 what to run, and what to record. Results go in the log at the end of each bench, with the
 date, the hardware and the commit.
 
-Written 2026-10-20, revised 2026-10-24 for the equipment at hand and the shopping list at
-the end:
-- spare laptops (one to three);
+Written 2026-10-20, revised 2026-10-24 and 2026-10-30 for the equipment at hand and the
+shopping list at the end:
+- three computers, each on a different operating system (below);
 - a LimeSDR (USB, v1);
 - an RTL-SDR (v1);
 - a Behringer UMC22 (USB audio interface).
+
+**The computers.** Three operating systems, so every bench result also says whether the
+modem works across platforms, which CI (Linux) cannot:
+
+| Name | Machine | OS | Role |
+|---|---|---|---|
+| Desktop | the main PC | Linux Mint 22.3 (Ubuntu 24.04 based) | closest to CI; development; bench A; third station in bench G |
+| Laptop W | HP 14z-fq0000 | Windows | Winlink Express (P6); the modem's first runs on Windows |
+| Laptop F | HP 14z-fq0000 | Fedora Workstation | a different Linux stack: RPM packages, a newer kernel, PipeWire by default |
+
+Notes on the laptops:
+- Both are being repaired (donated "to repair"), so their processors are not known yet.
+  The processor is soldered to the motherboard; this model's builds range from Ryzen 5
+  (4500U and similar) down to the 2-core AMD 3020e. On a Ryzen the station's 0.06-0.27 of
+  a core per second of signal is no concern; on a 3020e expect two to three times that,
+  tight with late entry on. If a motherboard is replaced, the replacement decides the
+  processor. Once each runs, record it (BIOS setup screen, `lscpu`, or Windows Settings,
+  About) and run the real-time budget test first:
+  `pytest tests/unit/test_station.py -k keeps_up`.
+- USB: two USB-A ports and one USB-C, enough for an audio interface and the USB Ethernet
+  adapter on separate ports. Wired Ethernet (HP's USB adapter) is used for anything timed
+  over the network, such as P2's virtual air between machines.
+- Wi-Fi: Realtek RTL8821CE. On Linux it is driven by the mainline `rtw88` driver (Fedora's
+  kernel has it). If it drops its connection, the commonly reported cure is turning off
+  its power saving through the `rtw88_pci` and `rtw88_core` module options (check their
+  current names with `modinfo`). Nothing on the benches depends on Wi-Fi.
+- Windows is new ground: nothing in this project has run there yet. The sound-card device
+  uses PortAudio (through `sounddevice`), which supports Windows; expect a first round of
+  fixes. Turn off Windows' audio "enhancements" on each interface, as on Linux.
+- Run the laptops on battery for the audio benches (ground loops; bench G).
 
 The Baofeng UV-5R is not used in this project: an FM handheld with filtered, emphasised
 audio represents nothing an HF data station uses.
@@ -47,12 +77,13 @@ jurisdiction.
 
 ---
 
-## Bench A: one laptop (P1, P2)
+## Bench A: one computer (P1, P2)
 
 **Tests:** the real-time core on a real operating system, and the virtual air (P2) with
 several modem processes. Most of P5 and P6 is tested the same way, before any other bench.
 
-**Needs:** one laptop. Linux is proposed (the CI platform).
+**Needs:** one computer: the desktop (Mint, the closest to CI) first; then each laptop,
+once repaired, for its processor's real-time figures and its OS.
 
 **Run:**
 - the test suite;
@@ -66,11 +97,11 @@ several modem processes. Most of P5 and P6 is tested the same way, before any ot
 - missed real-time deadlines (P1 counts them);
 - session times, against arqsim's (NETWORK.md §7).
 
-| Date | Laptop, OS | Commit | Result |
+| Date | Machine, OS, processor | Commit | Result |
 |---|---|---|---|
 | | | | |
 
-## Bench B: two laptops and an audio cable (P1, P6)
+## Bench B: two computers and an audio cable (P1, P6)
 
 **Tests:**
 - real converters;
@@ -78,10 +109,12 @@ several modem processes. Most of P5 and P6 is tested the same way, before any ot
   follow);
 - the audio interfaces' own behaviour, representative (Digirig) and reference (UMC22);
 - Pat to Pat over a real audio path;
-- Winlink Express, if one laptop runs Windows.
+- Winlink Express, on laptop W (Windows);
+- the modem across operating systems: each pairing of the three machines.
 
 **Needs:**
-- two laptops;
+- two of the computers: laptops W and F first (Windows to Fedora), then each with the
+  desktop, so every pair of operating systems has exchanged messages both ways;
 - two Digirig Mobile interfaces, one per laptop, and a cable joining their audio jacks
   (each one's transmit audio to the other's receive audio: wire it from Digirig's
   published pinout, or use their cables and a small adapter);
@@ -89,13 +122,13 @@ several modem processes. Most of P5 and P6 is tested the same way, before any ot
   UMC22 main output (quarter-inch TRS) to the Digirig's receive audio, and from the
   Digirig's transmit audio to UMC22 input 1 (quarter-inch, the combo jack's line input).
 
-Laptops' own headset jacks are avoided: they are combined (TRRS) jacks with microphone
+Computers' own headset jacks are avoided: they are combined (TRRS) jacks with microphone
 processing in the way, and represent nothing a station uses.
 
 **Setup:**
 
 ```
-laptop 1 ── Digirig 1 ── TX audio ──> RX audio ── Digirig 2 ── laptop 2
+computer 1 ── Digirig 1 ── TX audio ──> RX audio ── Digirig 2 ── computer 2
                          RX audio <── TX audio
 reference: Digirig 1 replaced by the UMC22 (main out -> Digirig RX, Digirig TX -> input 1)
 ```
@@ -112,7 +145,7 @@ reference: Digirig 1 replaced by the UMC22 (main out -> Digirig RX, Digirig TX -
 
 **Run:**
 - every mode, both directions, `m110c-modem` on each side, e.g.
-  `m110c-modem --audio --callsign N0CALL --chat --rate 1200` on both laptops, typing on
+  `m110c-modem --audio --callsign N0CALL --chat --rate 1200` on both computers, typing on
   one and reading on the other (`--list-audio` names the cards; `-s 48000`);
 - the same with the UMC22 at one end;
 - an hour of continuous reception: memory, dropped buffers, clock offset over time;
@@ -127,7 +160,7 @@ reference: Digirig 1 replaced by the UMC22 (main out -> Digirig RX, Digirig TX -
 - errors per mode, Digirig to Digirig and with the UMC22;
 - the levels used.
 
-| Date | Laptops, OS | Interfaces | Commit | Clock offset (ppm) | Result |
+| Date | Machines, OSes | Interfaces | Commit | Clock offset (ppm) | Result |
 |---|---|---|---|---|---|
 | | | | | | |
 
@@ -358,7 +391,7 @@ of real propagation. For linear (SSB) radios, summing at audio is otherwise equi
 summing at RF.
 
 **Needs:**
-- three computers: the two laptops and the main computer;
+- the three computers: the desktop and laptops W and F;
 - three interfaces: the two Digirigs and the UMC22 (the reference card is useful here: it
   makes one station's signal easy to tell apart from the interfaces' own effects);
 - and one of:
