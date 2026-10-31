@@ -45,6 +45,7 @@ baseband I/Q from arbitrary data and recovers the data from baseband I/Q, via fi
 | M12 Hardening: streaming CLI, fuzzing, long streams | done |
 | M13 Conformance report and documentation (v1.0) | done |
 | Post-1.0: 2400 bps digital voice as a raw bit stream (INT-019) | done |
+| P1 The station: real-time core, sound card and SDR (`m110c-modem`) | software done; bench tests to do (docs/ONAIR.md) |
 
 ## Transmitting
 
@@ -105,6 +106,35 @@ bit stream (SPEC_NOTES INT-019, measured on a real recording). The receiver igno
 given `--voice`, and then writes the raw bits, never async-deframed. No vocoder is included:
 §5.3.1.2 calls for STANAG 4198 (LPC-10e) or STANAG 4591 (MELPe), which an external program
 must supply (see docs/PLAN.md, non-goals, for why).
+
+## A station: `m110c-modem`
+
+```sh
+pip install -e '.[audio]'                     # sound cards (PortAudio, via sounddevice)
+m110c-modem --list-audio
+m110c-modem --audio --callsign N0CALL --chat   # receive; each line typed is sent; Ctrl-C stops
+m110c-modem --audio 3 --send report.txt --rate 600 --callsign N0CALL
+m110c-modem --sdr driver=rtlsdr --dial 915e6 --sdr-tx off      # an SDR, receive only
+m110c-modem --input recording.cf32             # files work too, as fast as they can be read
+```
+
+`m110c-modem` is a station: it receives continuously (decoded data to stdout, or
+`--received`) and transmits what it is given, half duplex like a radio. It runs on a sound
+card, on an SDR through SoapySDR (an upper-sideband transceiver in software, tuned
+`--dial`; its transmitter is capped to bench level unless `--sdr-tx filtered` says a filter
+follows it), or on files. Diagnostics on stderr: each message as it starts and ends (mode,
+carrier, clock, SNR, fading rate), each transmission (air time, peak level, clipping), the
+input level, and any input the program lost or output it could not supply in time.
+`--tx-ppm` corrects a sound card's clock, `--drive-db` the transmit level. Settings can come
+from a TOML file (`--config`; sections `[station]`, `[audio]`, `[sdr]`, `[transmit]`,
+`[receive]`, listed in `m110c-modem --help`'s module). In the amateur profile it transmits on
+the air only with a callsign configured; until the link layer identifies every transmission
+(docs/PLAN.md P5), raw messages must carry the identification themselves. How to test it
+without a licence, with laptops and SDRs on cables: docs/ONAIR.md.
+
+The library under it: `m110c.station.Station` (events for every message, byte,
+transmission and fault, on the device's clock: exactly repeatable on files and on
+`m110c.audio.VirtualDevice`) and the devices in `m110c.audio`.
 
 ## On the air
 

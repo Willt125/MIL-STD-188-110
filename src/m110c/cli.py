@@ -294,19 +294,19 @@ def _start_seconds(msg, sample_rate) -> float:
     return max(start, 0) / sample_rate
 
 
-def _describe_start(msg, sample_rate) -> str:
+def _describe_start(msg, sample_rate, prog: str = "m110c-rx") -> str:
     det = msg.detection
     mode = msg.mode
     if msg.interleave_detection == "deciding":  # not yet told from the data
         mode = f"{msg.mode.rate} bps, zero or short interleave,"
     found = "joined without preamble" if msg.late_entry else "preamble"
     return (
-        f"m110c-rx: {mode} {found} at {_start_seconds(msg, sample_rate):.2f} s, "
+        f"{prog}: {mode} {found} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), receiving"
     )
 
 
-def _describe(msg, sample_rate) -> str:
+def _describe(msg, sample_rate, prog: str = "m110c-rx") -> str:
     det = msg.detection
     if msg.eom_found:
         end = "EOM found"
@@ -318,7 +318,7 @@ def _describe(msg, sample_rate) -> str:
     if msg.fading_hz is not None:
         snr += f", fading {msg.fading_hz:.1f} Hz"
     return (
-        f"m110c-rx: {msg.mode} at {_start_seconds(msg, sample_rate):.2f} s, "
+        f"{prog}: {msg.mode} at {_start_seconds(msg, sample_rate):.2f} s, "
         f"carrier {det.carrier_hz:.1f} Hz ({_offset(det.carrier_hz)}), "
         f"clock {msg.clock_ppm:+.0f} ppm, SNR {snr}, "
         f"{msg.n_bytes} bytes, {end}"

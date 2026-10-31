@@ -15,10 +15,13 @@ dependencies = ["numpy>=1.24", "threadpoolctl>=3.1"]
 m110c-tx = "m110c.cli:main_tx"
 m110c-rx = "m110c.cli:main_rx"
 m110c-chan = "m110c.cli:main_chan"
+m110c-modem = "m110c.modem:main_modem"
 
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6"]
 dev = ["pytest>=7", "hypothesis>=6", "ruff", "matplotlib"]
+# m110c-modem on a sound card (PortAudio)
+audio = ["sounddevice>=0.4"]
 # the notebooks in docs/: python tools/build_notebook.py
 notebook = ["matplotlib", "nbformat", "nbclient", "ipykernel"]
 

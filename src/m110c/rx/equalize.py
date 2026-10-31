@@ -122,6 +122,18 @@ PERIOD_GAIN_75 = 0.1
 # 75 bps, data phase: a realignment must land where the set-correlation profile (which does
 # not depend on decisions) sees a path, within this many dB of its strongest.
 SET_CONFIRM_DB = 6.0
+# Data phase (not 75 bps): each frame's estimate is fitted to its decided data and its probe.
+# After a gap in the input (a sound card that dropped samples) the decisions came out turned
+# by 180 degrees with the estimate, agreed with it, and outvoted the probe frame after frame
+# (2400S: 32 decided symbols to 16 known), inverting the data for seconds
+# (docs/PERFORMANCE.md, P1). The probe alone settles it (_anchor_phase), when the fit is poor
+# (a share of signal below ANCHOR_FIT; such a lock fits at about 0.2, a sound frame at 0.9 or
+# more), the probe correlates with the estimate at least ANCHOR_CORRELATION, and it says the
+# estimate is turned by 90 degrees or more. (Turns of 45 degrees were as often wrong as
+# right in deep fades at 2400S, 5 Hz; the slips after gaps were 90 and 180 degrees.)
+ANCHOR_FIT = 0.5
+ANCHOR_CORRELATION = 0.5
+ANCHOR_MIN_TURNS = 2  # in eighths of a turn: 90 degrees
 # Fading rate (EqualizingDemodulator.fading_hz): the channel estimates' change over this lag,
 # less their change between neighbouring units (estimation noise), gives the fading
 # bandwidth; it is reported only from this many pairs of estimates.
@@ -340,6 +352,7 @@ class EqualizingDemodulator:
         self._probe_doubtful = False  # this frame's probe decision was doubtful (_decide_probe)
         self._held_frames = 0  # frames in a row that kept the previous estimate
         self._fit_fraction = 0.0  # the signal's share of the power, from the last channel fit
+        self.phase_corrections = 0  # data-frame estimates turned back by the probe
         self.set_readings: list = []  # 75 bps: the same per set (exceptional or not)
         self.sample_rate = sample_rate
         self.sps = sample_rate // T.SYMBOL_RATE
@@ -631,6 +644,9 @@ class EqualizingDemodulator:
             _, h, noise = self._estimates[-1]
         else:
             h, noise = self._estimate(k1)
+            if not training and not self.mode.is_75bps and self.block_known:
+                if self._fit_fraction < ANCHOR_FIT:
+                    h = self._anchor_phase(k0, k1, h)
         if not np.all(np.isfinite(h)):
             h, noise = np.zeros_like(h), 0.0
         signal = float(np.sum(np.abs(h) ** 2))
@@ -1046,6 +1062,31 @@ class EqualizingDemodulator:
         if edge >= 3 and near.max() >= power.max() * 10 ** (-LEADING_EDGE_DB / 10):
             return 0
         return edge
+
+    def _anchor_phase(self, k0: int, k1: int, h: np.ndarray) -> np.ndarray:
+        """The estimate ``h`` turned by the multiple of 45 degrees that best matches the
+        frame's probe alone (see ANCHOR_CORRELATION), or unchanged.
+
+        The probe's correlation with the received samples at each tap,
+        c_j = (1/P) sum_k conj(s_k) r_{k+j}, is an estimate of h_j from known symbols only
+        (noisier: the data around it acts as noise). If h = h_true e^{-ja}, then
+        sum_j conj(h_j) c_j is about |h|^2 e^{ja}, and its angle is the error a. Only whole
+        multiples of 45 degrees are corrected: that is the ambiguity decided 8-PSK data can
+        fall into, and smaller angles are the probe's noise; and of those only 90 degrees or
+        more (ANCHOR_MIN_TURNS)."""
+        probe = np.arange(k0 + self.mode.unknown_per_frame, k1)
+        known = self._sym[probe - self._sym_start]
+        r = self._observations(probe[:, None] + self.offsets[None, :])
+        c = known.conj() @ r / probe.size
+        rho = np.vdot(h, c)
+        norm = np.linalg.norm(h) * np.linalg.norm(c)
+        if norm == 0 or abs(rho) < ANCHOR_CORRELATION * norm:
+            return h
+        turns = int(np.round(np.angle(rho) / (np.pi / 4)))
+        if abs(turns) < ANCHOR_MIN_TURNS:
+            return h
+        self.phase_corrections += 1
+        return h * np.exp(1j * np.pi / 4 * turns)
 
     def _probe_fraction(self, k0: int, k1: int) -> float:
         """The signal's share of the received power in a data frame, from its probe alone.
