@@ -88,6 +88,9 @@ once repaired, for its processor's real-time figures and its OS.
 
 **Run:**
 - the test suite;
+- `python tools/profile_station.py` (and `--fading`): processor time per second of signal
+  and per message found, by stage, against the floor's budgets (PLAN.md, the performance
+  goal). On the laptops this is the floor's own measurement;
 - `m110c-air` with two to four `m110c-modem` processes, sessions on the moderate and
   harsh channels;
 - (P6) two Pat instances over the virtual air, `M110C_PAT` set.

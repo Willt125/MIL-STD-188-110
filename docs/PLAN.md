@@ -570,6 +570,41 @@ user, never fetched by the test suite.
 - *Transmitting on the air needs a callsign* in the amateur profile, from P1 on; the
   transmissions are not yet identified by the software (P5 does that).
 
+**Performance goal: the 2-core floor** (recorded 2026-10-31). The modem should run well on
+modest computers, because that widens who can use it: old laptops and small single-board
+machines are common station computers. The reference floor is the bench laptops of
+docs/ONAIR.md, an HP 14z-fq0000 with an **AMD 3020e** (2 cores, 2 threads, 1.2 GHz base,
+up to 2.6 GHz). Budgets on it, in processor seconds per second of signal **[PROPOSED]**:
+
+| Station state | Budget on the floor | Measured on the development machine (PERFORMANCE.md, P1) |
+|---|---:|---:|
+| Idle, waiting for a signal | 0.2 | 0.06 |
+| Idle with late entry on | 0.5 | 0.27-0.29 |
+| Receiving, any mode | 0.5 | 0.12-0.26 |
+| Finding a message (once per message) | 1 s in all | about 0.55 s |
+
+The floor is expected to be two to three times slower than the development machine, an
+estimate until bench A measures it with `tools/profile_station.py`; those measurements
+then replace the estimate. On that estimate the idle and receiving budgets hold, late entry
+is near its limit, and finding a message is over it: about 0.55 s here, perhaps 1.1-1.6 s
+there, for every transmission, which in a link layer's short turns (a 1.8-s control
+transmission) is most of the cost.
+
+Rules for optimizing:
+- *Same output first.* Most gains should come from doing the same work more cheaply:
+  caching, vectorizing, avoiding repeated work. Proof: identical output, the receiver's
+  bytes and every diagnostic exactly the same on a fixed set of signals, and the
+  transmitter's samples matching the golden vectors. Cheap to check, in CI.
+- *Different output only when measured.* Doing less work (fewer taps, a coarser search,
+  fewer passes) is acceptable only if the conformance report (`tools/conformance.py`) still
+  meets every Table XVI row; each such change is recorded in PERFORMANCE.md with its
+  measurements. These should be rare.
+- *Order, from the profile:* finding a message (the preamble search's correlation step),
+  then the demodulator (57-74% of receiving), then late entry, then the decoder at 2400
+  bps (up to 17%).
+- CI keeps machine-independent guards (the real-time tests); the floor's own figures come
+  from bench A.
+
 **After P2, an option: a channel box between real stations** (recorded 2026-10-24). The
 virtual air adds fading and path losses in software between modem processes; bench G
 (ONAIR.md) sums real stations' audio in hardware, with no fading. The hybrid joins them: a

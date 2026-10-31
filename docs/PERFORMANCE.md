@@ -850,6 +850,35 @@ receiver now always works there (`Receiver(working_rate=9600)`, through the S3 r
 the idle cost at 48000 S/s under 0.75, late entry included. The transmitter keeps a second of output queued
 ahead of the sound card, so a slow moment of the receiver's does not starve it.
 
+### Where the time goes
+
+`tools/profile_station.py` runs the receiver as a station uses it (48000 S/s from a sound
+card, worked at 9600, 0.1-s blocks) and splits its time by stage under cProfile, charging
+time spent in NumPy to the m110c function that called it. Development machine, 10 s per
+scenario, noise only (fading at 15 dB gave the same picture):
+
+| Scenario | CPU per s | Finding the message (s, once) | Search | Late entry | Demodulator | Decoder | Resampling |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Idle | 0.063 | | 85% | | | | 13% |
+| Idle, late entry on | 0.27 | | 30% | 66% | | | 4% |
+| 2400S | 0.24 | 0.57 | 17% | | 64% | 15% | 3% |
+| 2400L | 0.19 | 0.58 | 21% | | 57% | 17% | 3% |
+| 1200S | 0.26 | 0.61 | 20% | | 67% | 8% | 3% |
+| 600S | 0.22 | 0.59 | 17% | | 73% | 5% | 3% |
+| 150S | 0.23 | 0.62 | 18% | | 74% | 3% | 3% |
+| 75S | 0.12 | 0.54 | 39% | | 52% | 3% | 5% |
+| 600S, 60 bytes (1.8 s) | 0.14 | 0.56 | 61% | | 31% | 2% | 5% |
+
+(Shares are of profiled time, which the profiler distorts: read them as a ranking.)
+
+The surprise is the search. Idle it is cheap, 0.06 of a core, but when a preamble arrives
+it works hard to confirm it and read the mode: about 0.5 s of processor time per message,
+nearly all in one step, the correlation statistic `PreambleSearch._rho` (0.46 s of 0.47),
+with `_refine_and_read` about a third of it. On a long message it is a fifth of the cost;
+on a link layer's short control transmission it is most of it. It is the first target
+for the performance goal (PLAN.md), then the demodulator, which does most of the work
+while a message lasts.
+
 One measurement pitfall worth keeping: a process pool reuses its workers, so a variant set
 by changing module constants in one job stays set for the next jobs in that process. Every
 job must set every constant it depends on.
